@@ -120,5 +120,5 @@ Downloads bei ihm nicht zuverlässig im normalen Downloads-Ordner landen
 - 06.09.2026, 07:12 UTC: `zwt-probeplan-app-docs-only.zip` (nur Doku).
 - 06.09.2026, 07:34 UTC: `zwt-probeplan-app_2026-09-06_0734UTC.zip`
   (Phase 1–7 wiederhergestellt).
-- 06.09.2026, ~08:15 UTC: nächstes ZIP folgt mit Phase 1–8 komplett
-  (Dateiname wird in der Begleitnachricht genannt, siehe README Punkt 8).
+- 06.09.2026, 08:02 UTC: **`zwt-probeplan-app_2026-09-06_0802UTC.zip`**
+  — Phase 1–8 komplett, 54 Tests grün. Aktuellster Stand.
