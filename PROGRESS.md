@@ -30,20 +30,37 @@ angenommen), bevor Code blind aus REFERENCE.md nachgebaut wird.
 
 **GitHub**: Rafi hat die Repo-URL mitgeteilt
 (`https://github.com/raficello/zwt-probeplan-app.git`, dauerhaft in
-README.md). Remote gesetzt, Push zweimal versucht (auch nachdem Rafi
-GitHub in den Claude-Einstellungen verbunden hat) — schlägt beide Male
-identisch fehl: "access denied by the git proxy:
-raficello/zwt-probeplan-app is not in this session's authorized
-repository set... add the repository to the session's sources."
-Vermutung: diese Autorisierung wird pro Sitzung/Scheduled-Task beim
-Start festgelegt, nicht nachträglich während eine Sitzung läuft.
-**Update 07.09.2026**: in einer NEUEN (nächtlichen) Sitzung erneut
-probiert — exakt derselbe 403-Fehler. Die Vermutung "neue Sitzung löst
-es automatisch" ist damit widerlegt. Muss aktiv behoben werden: prüfen,
-ob beim Anlegen des Scheduled Tasks (oder in den Claude-Einstellungen)
-eine explizite Repo-Freigabe für automatisierte Sitzungen möglich ist
-— Rafi müsste das einrichten, kann von hier aus nicht selbst behoben
-werden.
+README.md). Remote gesetzt, Push mehrfach versucht (auch nachdem Rafi
+GitHub in den Claude-Einstellungen verbunden hat, auch in einer neuen
+nächtlichen Sitzung) — schlägt jedes Mal identisch fehl: "access denied
+by the git proxy: raficello/zwt-probeplan-app is not in this session's
+authorized repository set... Use add_repo to request access."
+
+**Ursache gefunden (07.09.2026): bestätigter Anthropic-seitiger Bug,
+nicht unser Konfigurationsfehler.** Öffentliches GitHub-Issue
+[anthropics/claude-code#76248](https://github.com/anthropics/claude-code/issues/76248)
+("Cloud/Cowork sessions: git proxy now blocks all pushes — 'not in this
+session's authorized repository set'") beschreibt exakt denselben
+Fehler, mit denselben Umgebungsvariablen, die auch in dieser Sitzung
+gesetzt sind (`CCR_TEST_GITPROXY=1`, `CCR_AGENT_PROXY_ENABLED=1`,
+`CCR_UPSTREAM_PROXY_ENABLED=1`). Laut Issue: server-seitiger Rollout
+seit 10.07.2026, betrifft alle Cowork-Sitzungen, blockiert NUR Pushes
+(Lesen/Klonen funktioniert weiterhin), kein `add_repo`-Tool oder UI in
+Cowork tatsächlich erreichbar, kein bekannter Workaround, kein
+Anthropic-Statement/Fix/ETA (Stand 07.09.2026). Ein eigener `add_repo`-
+Aufruf und die Suche nach einer entsprechenden UI/Einstellung wurden in
+dieser Sitzung ergebnislos versucht (kein passendes Tool, kein Skript
+im Sandbox-Dateisystem, GitHub taucht auch nicht in der normalen
+Connector-Liste auf).
+
+**Konsequenz**: Push bleibt bis zu einem Anthropic-seitigen Fix
+blockiert, unabhängig davon, was Rafi in seinen Einstellungen
+konfiguriert. Workaround bleibt wie bisher: Rafi lädt bei Bedarf
+manuell ein ZIP hoch bzw. pusht selbst von seinem Rechner aus (dort
+funktioniert `git push` normal, da kein Cowork-Sitzungs-Proxy
+zwischengeschaltet ist). Kein weiterer Push-Versuch pro Sitzung nötig,
+bis das Issue als behoben gemeldet wird — stattdessen ggf. Rafi bitten,
+lokal zu pushen, oder den Status des Issues periodisch zu prüfen.
 
 **Korrektur zum update_trigger-"Grössenlimit"** (fälschlich in einer
 früheren Fassung dieser Nacht angenommen): der Fehler "result exceeds
