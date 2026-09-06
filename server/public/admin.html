@@ -57,7 +57,7 @@
   <form id="terminForm" class="versteckt">
     <input type="hidden" id="terminId">
     <label>Datum
-      <input type="date" id="fDatum" required>
+      <select id="fDatum" required></select>
       <span id="wochentagAnzeige"></span>
     </label>
     <label>Anfangszeit
@@ -123,6 +123,48 @@
     var aktuelleTermine = [];
 
     var WOCHENTAG_NACH_JS_TAG = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']; // Date#getDay(): 0=So
+
+    // Festival-Tage 2026 (Rafi-Feedback, 06.09.2026: Datum im Formular soll
+    // eine Auswahlliste der tatsächlichen Tage sein statt ein freies
+    // Datumsfeld -- Quelle: Tab "Config"/Master-Blöcke im Google Sheet,
+    // Mo. 12.10.2026 bis So. 18.10.2026). Bei einem künftigen Jahreswechsel
+    // hier anpassen (noch keine Datenquelle im Server dafür, siehe
+    // PROGRESS.md "Offene Fragen").
+    var FESTIVAL_TAGE = [
+      '2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15',
+      '2026-10-16', '2026-10-17', '2026-10-18',
+    ];
+
+    function datumAnzeigeText(datum) {
+      return wochentagVonDatum(datum) + ', ' + datum.slice(8, 10) + '.' + datum.slice(5, 7) + '.' + datum.slice(0, 4);
+    }
+
+    function fuelleDatumsAuswahl() {
+      var select = document.getElementById('fDatum');
+      select.innerHTML = '';
+      FESTIVAL_TAGE.forEach(function (datum) {
+        var opt = document.createElement('option');
+        opt.value = datum;
+        opt.textContent = datumAnzeigeText(datum);
+        select.appendChild(opt);
+      });
+    }
+
+    // Setzt das Datums-Auswahlfeld auf `datum` -- falls das kein
+    // Festival-Tag ist (z.B. ein alter Termin von ausserhalb der
+    // Festivalwoche, oder das heutige Datum beim Öffnen von "+ Neuer
+    // Termin" ausserhalb der Festivalwoche), wird vorübergehend eine
+    // eigene Option dafür ergänzt, statt das Feld leer/ungültig zu lassen.
+    function setzeFormularDatum(datum) {
+      var select = document.getElementById('fDatum');
+      if (FESTIVAL_TAGE.indexOf(datum) === -1) {
+        var opt = document.createElement('option');
+        opt.value = datum;
+        opt.textContent = datumAnzeigeText(datum) + ' (ausserhalb Festivalwoche)';
+        select.insertBefore(opt, select.firstChild);
+      }
+      select.value = datum;
+    }
 
     function heutigesDatum() {
       var d = new Date();
@@ -329,7 +371,7 @@
 
     function formularZuruecksetzen() {
       document.getElementById('terminId').value = '';
-      document.getElementById('fDatum').value = datumInput.value;
+      setzeFormularDatum(FESTIVAL_TAGE.indexOf(datumInput.value) !== -1 ? datumInput.value : FESTIVAL_TAGE[0]);
       document.getElementById('fAnfang').value = '';
       document.getElementById('fEnde').value = '';
       document.getElementById('fTyp').value = '';
@@ -353,7 +395,7 @@
 
     function formularZumBearbeitenOeffnen(t) {
       document.getElementById('terminId').value = t.id;
-      document.getElementById('fDatum').value = t.datum;
+      setzeFormularDatum(t.datum);
       document.getElementById('fAnfang').value = t.anfangszeit.slice(0, 5);
       document.getElementById('fEnde').value = t.endzeit.slice(0, 5);
       document.getElementById('fRaum').value = t.raum.id;
@@ -494,6 +536,7 @@
 
     var urlParams = new URLSearchParams(window.location.search);
     datumInput.value = urlParams.get('datum') || heutigesDatum();
+    fuelleDatumsAuswahl();
     zeigeStand();
     ladeRaeume().then(function () {
       ladeTag(datumInput.value);
