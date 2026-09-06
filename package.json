@@ -1,0 +1,10 @@
+{
+  "name": "zwt-probeplan-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Migration des Google-Sheets 'ZwT 2026 - Probeplan' in eine eigene Web-Anwendung.",
+  "scripts": {
+    "test": "node --test migrate/test/*.test.js server/test/*.test.js",
+    "migrate": "node migrate/migrate.js"
+  }
+}

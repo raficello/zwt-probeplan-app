@@ -51,3 +51,12 @@ eigene, auf einem Infomaniak-VPS gehostete Web-Anwendung.
 
 Der vollständige Ablaufplan mit allen 10 Phasen:
 https://claude.ai/code/artifact/f8082705-72cd-41e7-b8c7-63f1ff74fe81
+
+## GitHub-Repo
+
+`https://github.com/raficello/zwt-probeplan-app.git` (von Rafi am
+06.09.2026 mitgeteilt). Bei leerem Verzeichnis: `git remote add origin
+https://github.com/raficello/zwt-probeplan-app.git` setzen und `git push
+origin HEAD:main` versuchen (Push war zuvor durch einen Cowork-internen
+Proxy-Bug blockiert, siehe PROGRESS.md "Offene Fragen" — Status jede
+Nacht neu prüfen, nicht mehrfach pro Sitzung versuchen).

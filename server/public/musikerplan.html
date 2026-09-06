@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>ZwT Probeplan — Musikerplan</title>
+<link rel="stylesheet" href="/vendor/vis-timeline/dist/vis-timeline-graph2d.min.css">
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; }
+  h1 { font-size: 1.1rem; margin: 0 0 0.75rem 0; }
+  nav { font-size: 0.9rem; margin-bottom: 0.5rem; }
+  .toolbar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+  .toolbar button { font-size: 1rem; padding: 0.25rem 0.75rem; cursor: pointer; }
+  .toolbar input[type="date"] { font-size: 1rem; padding: 0.25rem; }
+  .toolbar input[type="text"] { font-size: 1rem; padding: 0.25rem; width: 16rem; }
+  .toolbar label { font-size: 0.85rem; color: #555; }
+  #status { color: #900; margin-bottom: 0.5rem; }
+  #timeline { border: 1px solid #ccc; }
+  .legende { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; font-size: 0.85rem; }
+  .legende span.kaestchen { display: inline-block; width: 0.9em; height: 0.9em; border: 1px solid #999; vertical-align: middle; margin-right: 0.3em; }
+</style>
+</head>
+<body>
+  <h1>ZwT Probeplan — Musikerplan</h1>
+  <nav><a href="/raumplan.html">Zur Raumplan-Ansicht</a></nav>
+  <div class="toolbar">
+    <button id="btnZurueck">&larr; Tag zurück</button>
+    <input type="date" id="datum">
+    <button id="btnVor">Tag vor &rarr;</button>
+    <label for="kuerzel">Musiker-Kürzel (leer = alle, die an diesem Tag einen Termin haben):</label>
+    <input type="text" id="kuerzel" placeholder="z.B. AB, CD">
+  </div>
+  <div id="status"></div>
+  <div id="timeline"></div>
+  <div class="legende">
+    <span><span class="kaestchen" style="background:#ffd9a0"></span>Neu/geändert seit letztem Sperren</span>
+    <span><span class="kaestchen" style="background:#b6f2b6"></span>Kzt (Konzertblock — erscheint bei allen)</span>
+    <span><span class="kaestchen" style="background:#d7f2d7"></span>K (Konzertstück)</span>
+    <span><span class="kaestchen" style="background:#fff3b0"></span>GP / Stimmung</span>
+    <span><span class="kaestchen" style="background:#fbd7ea"></span>Aufbau/Apéro/Logistik/Musikeressen</span>
+    <span><span class="kaestchen" style="background:#ffffff"></span>Normale Probe</span>
+  </div>
+
+  <script src="/vendor/vis-timeline/standalone/umd/vis-timeline-graph2d.min.js"></script>
+  <script src="/color.js"></script>
+  <script src="/musiker-logik.js"></script>
+  <script>
+    var container = document.getElementById('timeline');
+    var timeline = null;
+    var statusEl = document.getElementById('status');
+    var datumInput = document.getElementById('datum');
+    var kuerzelInput = document.getElementById('kuerzel');
+    var letzteTermine = [];
+
+    function heutigesDatum() {
+      var d = new Date();
+      return d.toISOString().slice(0, 10);
+    }
+
+    function datumVerschieben(deltaTage) {
+      var d = new Date(datumInput.value + 'T00:00:00');
+      d.setDate(d.getDate() + deltaTage);
+      datumInput.value = d.toISOString().slice(0, 10);
+      ladeTag(datumInput.value);
+    }
+
+    function gewuenschteKuerzel(termine) {
+      var eingabe = kuerzelInput.value.trim();
+      if (!eingabe) return ermittleMusikerAusTerminen(termine);
+      return eingabe
+        .split(/[,\s]+/)
+        .map(function (k) { return k.trim().toUpperCase(); })
+        .filter(Boolean);
+    }
+
+    function aktualisiereAnzeige(datum) {
+      var musikerListe = gewuenschteKuerzel(letzteTermine);
+      var built = baueMusikerGroupsUndItems(letzteTermine, musikerListe, datum, terminFarbe);
+
+      if (musikerListe.length === 0) {
+        statusEl.textContent = 'Keine Musiker:innen an diesem Tag (oder Kürzel-Filter ergibt keine Treffer).';
+      } else {
+        statusEl.textContent = '';
+      }
+
+      if (!timeline) {
+        timeline = new vis.Timeline(container, built.items, built.groups, {
+          min: datum + 'T00:00:00',
+          max: datum + 'T23:59:59',
+          stack: true,
+          orientation: 'top',
+        });
+      } else {
+        // Siehe raumplan.html: destroy()+Neuaufbau vermeiden (führte dort
+        // zu einem Rendering-Bug), stattdessen bestehende Instanz
+        // aktualisieren.
+        timeline.setOptions({ min: datum + 'T00:00:00', max: datum + 'T23:59:59' });
+        timeline.setGroups(built.groups);
+        timeline.setItems(built.items);
+      }
+      timeline.setWindow(datum + 'T07:00:00', datum + 'T23:00:00');
+    }
+
+    function ladeTag(datum) {
+      statusEl.textContent = 'Lade...';
+      fetch('/api/termine?datum=' + encodeURIComponent(datum))
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(function (data) {
+          letzteTermine = data.termine;
+          aktualisiereAnzeige(datum);
+        })
+        .catch(function (err) {
+          statusEl.textContent = 'Fehler beim Laden: ' + err.message;
+        });
+    }
+
+    document.getElementById('btnZurueck').addEventListener('click', function () {
+      datumVerschieben(-1);
+    });
+    document.getElementById('btnVor').addEventListener('click', function () {
+      datumVerschieben(1);
+    });
+    datumInput.addEventListener('change', function () {
+      ladeTag(datumInput.value);
+    });
+    kuerzelInput.addEventListener('input', function () {
+      if (timeline) aktualisiereAnzeige(datumInput.value);
+    });
+
+    var urlParams = new URLSearchParams(window.location.search);
+    datumInput.value = urlParams.get('datum') || heutigesDatum();
+    if (urlParams.get('kuerzel')) kuerzelInput.value = urlParams.get('kuerzel');
+    ladeTag(datumInput.value);
+  </script>
+</body>
+</html>

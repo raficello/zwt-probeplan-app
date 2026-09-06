@@ -1,0 +1,84 @@
+[
+  {
+    "wochentag": "Mo",
+    "datum": "2026-09-07",
+    "termine": [
+      {
+        "anfangszeit": "09:00",
+        "endzeit": "10:30",
+        "aud": "802",
+        "typ": "",
+        "werk": "Beethoven Sinfonie Nr. 5",
+        "teilnehmer": "AB CD EF",
+        "ort": "Kursaal",
+        "bemerkungen": ""
+      },
+      {
+        "anfangszeit": "10:45",
+        "endzeit": "12:00",
+        "aud": "604",
+        "typ": "GP",
+        "werk": "GP Brahms Violinkonzert",
+        "teilnehmer": "AB GH",
+        "ort": "Kirchgemeindehaus",
+        "bemerkungen": "Flügelstimmung danach"
+      },
+      {
+        "anfangszeit": "",
+        "endzeit": "",
+        "aud": "",
+        "typ": "",
+        "werk": "",
+        "teilnehmer": "",
+        "ort": "",
+        "bemerkungen": ""
+      }
+    ]
+  },
+  {
+    "wochentag": "Di",
+    "datum": "2026-09-08",
+    "termine": [
+      {
+        "anfangszeit": "14:00",
+        "endzeit": "14:00",
+        "aud": "802",
+        "typ": "Kzt",
+        "werk": "Konzertblock Abend",
+        "teilnehmer": "",
+        "ort": "Kursaal",
+        "bemerkungen": ""
+      },
+      {
+        "anfangszeit": "14:00",
+        "endzeit": "14:20",
+        "aud": "802",
+        "typ": "K",
+        "werk": "Brahms Violinkonzert (Konzert)",
+        "teilnehmer": "AB GH",
+        "ort": "Kursaal",
+        "bemerkungen": ""
+      },
+      {
+        "anfangszeit": "14:25",
+        "endzeit": "14:50",
+        "aud": "802",
+        "typ": "K",
+        "werk": "Beethoven Sinfonie Nr. 5 (Konzert)",
+        "teilnehmer": "AB CD EF",
+        "ort": "Kursaal",
+        "bemerkungen": ""
+      },
+      {
+        "anfangszeit": "18:00",
+        "endzeit": "19:00",
+        "aud": "999",
+        "typ": "",
+        "werk": "Aufbau Bühne",
+        "teilnehmer": "IJ",
+        "ort": "Mehrzweckhalle",
+        "bemerkungen": "aufbau"
+      }
+    ]
+  }
+]

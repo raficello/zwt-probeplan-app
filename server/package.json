@@ -1,0 +1,16 @@
+{
+  "name": "zwt-probeplan-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Server für die ZwT-Probeplan-Web-App: Terminverwaltungs-API (Phase 3), Raumplan-/Musiker-Ansicht (Phase 4), Stand sperren (Phase 5), PDF-Export (Phase 6).",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pdfkit": "^0.20.2",
+    "pg": "^8.12.0",
+    "vis-timeline": "^8.5.4"
+  }
+}
