@@ -24,7 +24,7 @@
   <nav><a href="/raumplan.html">Zur Raumplan-Ansicht</a> <a href="/admin.html">Zur Terminverwaltung</a></nav>
   <div class="toolbar">
     <button id="btnZurueck">&larr; Tag zurück</button>
-    <input type="date" id="datum">
+    <select id="datum"></select>
     <button id="btnVor">Tag vor &rarr;</button>
     <label for="kuerzel">Musiker-Kürzel (leer = alle, die an diesem Tag einen Termin haben):</label>
     <input type="text" id="kuerzel" placeholder="z.B. AB, CD">
@@ -51,15 +51,36 @@
     var kuerzelInput = document.getElementById('kuerzel');
     var letzteTermine = [];
 
-    function heutigesDatum() {
-      var d = new Date();
-      return d.toISOString().slice(0, 10);
+    // Festival-Tage 2026 (Rafi-Feedback, 06.09.2026: Datumsauswahl überall
+    // als Liste der tatsächlichen Tage statt freies Datumsfeld/freie
+    // Vor-/Zurück-Rechnung -- Quelle: Google Sheet "ZwT 2026 - Probeplan",
+    // Festivalwoche Mo. 12.10.2026 bis So. 18.10.2026). Bei einem
+    // künftigen Jahreswechsel hier anpassen.
+    var FESTIVAL_TAGE = [
+      '2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15',
+      '2026-10-16', '2026-10-17', '2026-10-18',
+    ];
+    var WOCHENTAG_NACH_JS_TAG = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']; // Date#getDay(): 0=So
+
+    function wochentagVonDatum(datumStr) {
+      var d = new Date(datumStr + 'T00:00:00');
+      return WOCHENTAG_NACH_JS_TAG[d.getDay()];
+    }
+
+    function fuelleDatumsAuswahl(select) {
+      select.innerHTML = '';
+      FESTIVAL_TAGE.forEach(function (datum) {
+        var opt = document.createElement('option');
+        opt.value = datum;
+        opt.textContent = wochentagVonDatum(datum) + ', ' + datum.slice(8, 10) + '.' + datum.slice(5, 7) + '.' + datum.slice(0, 4);
+        select.appendChild(opt);
+      });
     }
 
     function datumVerschieben(deltaTage) {
-      var d = new Date(datumInput.value + 'T00:00:00');
-      d.setDate(d.getDate() + deltaTage);
-      datumInput.value = d.toISOString().slice(0, 10);
+      var index = FESTIVAL_TAGE.indexOf(datumInput.value);
+      var neuerIndex = index === -1 ? 0 : Math.min(FESTIVAL_TAGE.length - 1, Math.max(0, index + deltaTage));
+      datumInput.value = FESTIVAL_TAGE[neuerIndex];
       ladeTag(datumInput.value);
     }
 
@@ -130,7 +151,9 @@
     });
 
     var urlParams = new URLSearchParams(window.location.search);
-    datumInput.value = urlParams.get('datum') || heutigesDatum();
+    var startDatum = urlParams.get('datum');
+    fuelleDatumsAuswahl(datumInput);
+    datumInput.value = FESTIVAL_TAGE.indexOf(startDatum) !== -1 ? startDatum : FESTIVAL_TAGE[0];
     if (urlParams.get('kuerzel')) kuerzelInput.value = urlParams.get('kuerzel');
     ladeTag(datumInput.value);
   </script>

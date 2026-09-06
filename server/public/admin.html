@@ -45,7 +45,7 @@
 
   <div class="toolbar">
     <button id="btnZurueck">&larr; Tag zurück</button>
-    <input type="date" id="datum">
+    <select id="datum"></select>
     <button id="btnVor">Tag vor &rarr;</button>
     <span id="standInfo" style="font-size:0.85rem;color:#555"></span>
   </div>
@@ -139,8 +139,12 @@
       return wochentagVonDatum(datum) + ', ' + datum.slice(8, 10) + '.' + datum.slice(5, 7) + '.' + datum.slice(0, 4);
     }
 
-    function fuelleDatumsAuswahl() {
-      var select = document.getElementById('fDatum');
+    // `select` ist entweder das Toolbar-Feld (id="datum", Tag-Navigation)
+    // oder das Formular-Feld (id="fDatum") -- beide funktionieren identisch,
+    // deshalb hier bewusst als Parameter statt fest verdrahtet (Rafi-
+    // Feedback, 06.09.2026: auch die Toolbar-Navigation soll eine
+    // Auswahlliste statt eines freien Datumsfelds sein).
+    function fuelleDatumsAuswahl(select) {
       select.innerHTML = '';
       FESTIVAL_TAGE.forEach(function (datum) {
         var opt = document.createElement('option');
@@ -150,13 +154,11 @@
       });
     }
 
-    // Setzt das Datums-Auswahlfeld auf `datum` -- falls das kein
+    // Setzt ein Datums-Auswahlfeld auf `datum` -- falls das kein
     // Festival-Tag ist (z.B. ein alter Termin von ausserhalb der
-    // Festivalwoche, oder das heutige Datum beim Öffnen von "+ Neuer
-    // Termin" ausserhalb der Festivalwoche), wird vorübergehend eine
-    // eigene Option dafür ergänzt, statt das Feld leer/ungültig zu lassen.
-    function setzeFormularDatum(datum) {
-      var select = document.getElementById('fDatum');
+    // Festivalwoche), wird vorübergehend eine eigene Option dafür ergänzt,
+    // statt das Feld leer/ungültig zu lassen.
+    function setzeDatumsWert(select, datum) {
       if (FESTIVAL_TAGE.indexOf(datum) === -1) {
         var opt = document.createElement('option');
         opt.value = datum;
@@ -181,10 +183,14 @@
       statusEl.className = art || '';
     }
 
+    // Schritt innerhalb der Festival-Tage-Liste statt freier Datumsrechnung
+    // (Rafi-Feedback, 06.09.2026) -- am Rand der Liste bleibt es einfach
+    // beim ersten/letzten Tag stehen, statt aus der Festivalwoche
+    // herauszulaufen.
     function datumVerschieben(deltaTage) {
-      var d = new Date(datumInput.value + 'T00:00:00');
-      d.setDate(d.getDate() + deltaTage);
-      datumInput.value = d.toISOString().slice(0, 10);
+      var index = FESTIVAL_TAGE.indexOf(datumInput.value);
+      var neuerIndex = index === -1 ? 0 : Math.min(FESTIVAL_TAGE.length - 1, Math.max(0, index + deltaTage));
+      datumInput.value = FESTIVAL_TAGE[neuerIndex];
       ladeTag(datumInput.value);
     }
 
@@ -371,7 +377,7 @@
 
     function formularZuruecksetzen() {
       document.getElementById('terminId').value = '';
-      setzeFormularDatum(FESTIVAL_TAGE.indexOf(datumInput.value) !== -1 ? datumInput.value : FESTIVAL_TAGE[0]);
+      setzeDatumsWert(document.getElementById('fDatum'), FESTIVAL_TAGE.indexOf(datumInput.value) !== -1 ? datumInput.value : FESTIVAL_TAGE[0]);
       document.getElementById('fAnfang').value = '';
       document.getElementById('fEnde').value = '';
       document.getElementById('fTyp').value = '';
@@ -395,7 +401,7 @@
 
     function formularZumBearbeitenOeffnen(t) {
       document.getElementById('terminId').value = t.id;
-      setzeFormularDatum(t.datum);
+      setzeDatumsWert(document.getElementById('fDatum'), t.datum);
       document.getElementById('fAnfang').value = t.anfangszeit.slice(0, 5);
       document.getElementById('fEnde').value = t.endzeit.slice(0, 5);
       document.getElementById('fRaum').value = t.raum.id;
@@ -535,8 +541,10 @@
     formEl.addEventListener('submit', terminSpeichern);
 
     var urlParams = new URLSearchParams(window.location.search);
-    datumInput.value = urlParams.get('datum') || heutigesDatum();
-    fuelleDatumsAuswahl();
+    var startDatum = urlParams.get('datum');
+    fuelleDatumsAuswahl(datumInput);
+    fuelleDatumsAuswahl(document.getElementById('fDatum'));
+    setzeDatumsWert(datumInput, FESTIVAL_TAGE.indexOf(startDatum) !== -1 ? startDatum : FESTIVAL_TAGE[0]);
     zeigeStand();
     ladeRaeume().then(function () {
       ladeTag(datumInput.value);
