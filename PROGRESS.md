@@ -84,12 +84,17 @@ Downloads bei ihm nicht zuverlässig im normalen Downloads-Ordner landen
 - **Phase 7** (Zugriff/Login): [x] Passwortschutz für Schreiben
   (`auth.js`), von Rafi bestätigt.
 - **Phase 8** (Parallelbetrieb/Testlauf): [x] Terminverwaltung
-  (`admin.html`) fertig gebaut+getestet, inkl. Wochentags-
-  Raumbeschränkung und `GET /api/raeume`. **Noch NICHT auf dem VPS
-  ausgerollt** — ZIP an Rafi schicken sobald er bereit ist (siehe
-  README.md Punkt 4: diesmal SOFORT, nicht verzögert). [ ] Der
+  (`admin.html`) fertig gebaut, **auf dem VPS ausgerollt und von Rafi
+  bestätigt** (06.09.2026: Speichern/Löschen funktioniert produktiv).
+  [x] Wochentags-Raumbeschränkung, `GET /api/raeume`, Raum-Produktivdaten
+  (`db/seed-raeume.sql`, noch auf dem VPS auszuführen). [x] Datum als
+  Festival-Tage-Auswahl überall (nicht nur Formular, auch Toolbar-
+  Navigation aller 3 Seiten). [x] Werk-Autocomplete + Teilnehmer-
+  Vorschlag (Abschnitt 16, `db/migration-werke.sql` +
+  `db/seed-werke-2026.sql`, noch auf dem VPS auszuführen). [ ] Der
   eigentliche Parallelbetrieb/Testlauf mit einer realen Probenwoche hat
-  noch nicht begonnen — das ist der nächste inhaltliche Schritt.
+  noch nicht begonnen — das ist der nächste inhaltliche Schritt, sobald
+  alle Seed-Skripte auf dem VPS gelaufen sind.
 - **Phase 9** (Umstieg): noch nicht begonnen.
 
 ## Offene Fragen / Annahmen
@@ -128,15 +133,30 @@ Downloads bei ihm nicht zuverlässig im normalen Downloads-Ordner landen
   ein funktionierender Rettungsweg (siehe oben).
 - `update_trigger`s "exceeds maximum allowed tokens"-Fehler bedeutet
   NICHT, dass das Update fehlschlug — siehe oben.
-- **Neue Funktion angefragt (06.09.2026, Rafi-Feedback beim Testen)**:
-  Werk-Feld in `admin.html` soll per Nummer (z.B. "401" = Konzert 4,
-  Werk 1) oder Namensanfang autovervollständigt werden, aus einer
-  "Konzertliste"; ausgewähltes Werk soll die Teilnehmer vorschlagen
-  (änderbar). Diese Werkliste/Nummerierung wurde im Google Sheet noch
-  nicht gefunden (die Config-Tab-Suche fand nur Räume+Pufferzeiten+
-  Tage, nicht die Werk-Nummerierung) — mit Rafi klären, wo genau diese
-  Liste im Sheet steht bzw. ob sie neu angelegt werden muss. Bisher rein
-  konzeptionell, keine Umsetzung begonnen.
+- **Werk-Autocomplete + Teilnehmer-Vorschlag: erledigt** (06.09.2026).
+  Rafi hat den kompletten Excel-Export hochgeladen, per `openpyxl`
+  gelesen (zuverlässiger als der Google-Drive-Connector, der den Tab
+  "config" nicht vollständig lieferte). Details: REFERENCE.md
+  Abschnitt 16. 1 Werk ("502a", nicht-numerischer Code) bewusst nicht
+  importiert — falls das gebraucht wird, müsste `werke.nummer` von
+  `int` auf `text` geändert werden (kleiner Nacharbeitsposten, kein
+  Blocker).
+- **Saison-Verwaltung angefragt, bewusst VERTAGT (06.09.2026)**: Rafi
+  will künftig mehrere Saisons verwalten können (Daten, Musiker,
+  Konzerte, Werke pro Saison; vergangene Saisons als Archiv, Jahr per
+  Dropdown wählbar). Das ist eine grosse, invasive Änderung (praktisch
+  jede Tabelle bräuchte eine `saison_id`, plus Migration der bereits
+  produktiv befüllten Daten, plus UI-Jahresauswahl auf allen 3 Seiten).
+  Rafis eigene Formulierung ("Es muss DANN eine Verwaltung geben")
+  deutet darauf hin, dass das für eine KÜNFTIGE Saison gilt, nicht für
+  das bevorstehende Festival Okt. 2026 — deshalb bewusst NICHT jetzt
+  kurz vor dem Festival umgesetzt (Risiko, die gerade lauffähige App zu
+  destabilisieren), sondern als eigenes Vorhaben nach dem Festival
+  vorgeschlagen, wenn mehr Zeit für einen sauberen Entwurf ist. Rafi
+  müsste das bestätigen — falls er es doch VOR dem Festival braucht,
+  sofort Bescheid geben. Die neuen Werk/Konzert-Tabellen (Abschnitt 16)
+  wurden bewusst ohne `saison_id` gebaut, um diese Entscheidung nicht
+  vorwegzunehmen.
 
 ## Letzte Sicherung (ZIP an Nutzer per SendUserFile)
 - 03.09.2026, 04.09.2026; danach unregelmässig während Tagsitzungen.

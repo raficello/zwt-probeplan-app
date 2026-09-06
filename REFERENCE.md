@@ -249,19 +249,60 @@ wiederhergestellt, lief/läuft produktiv, von Rafi bestätigt.
 
 ## 15. Terminverwaltung / admin.html (Phase 8)
 
-`server/public/admin.html` — Code Stand 06.09.2026 aus Rafis zweitem
-ZIP wiederhergestellt (war zuvor kurzzeitig komplett verloren, siehe
-PROGRESS.md), noch NICHT auf dem VPS ausgerollt.
+`server/public/admin.html` — **auf dem VPS ausgerollt und von Rafi
+bestätigt (06.09.2026): Speichern/Löschen funktioniert produktiv.**
 
 Tagesansicht mit Terminliste (neu/geändert farblich hervorgehoben, siehe
 Abschnitt 5), "+ Neuer Termin"/"Bearbeiten"-Formular (POST/PUT). Raum-
-Auswahl über `GET /api/raeume` (neu in Phase 8: liefert ALLE Räume, auch
-ohne Termin heute — zeigt erlaubte Wochentage pro Raum). Wochentag aus
-Datum automatisch berechnet (`wochentagVonDatum`), nicht manuell wählbar.
-Typ=Kzt sperrt Teilnehmer-Feld im Formular. Validierungs-(400)/Konflikt-
+Auswahl über `GET /api/raeume` (liefert ALLE Räume, auch ohne Termin
+heute — zeigt erlaubte Wochentage pro Raum; Produktionsdaten dafür in
+`db/seed-raeume.sql`, siehe Abschnitt 2). Datum ist eine Auswahlliste
+der Festival-Tage (`FESTIVAL_TAGE`, siehe Abschnitt 6), Wochentag daraus
+automatisch berechnet. Typ=Kzt sperrt Teilnehmer-Feld im Formular.
+Werk-Feld hat Autocomplete (Abschnitt 16). Validierungs-(400)/Konflikt-
 (409)-Fehler direkt im Formular angezeigt. Auth wie `raumplan.html`
 (Abschnitt 14). War end-to-end verifiziert (echtes Postgres + Playwright:
 Anlegen/Bearbeiten/Löschen, falsches Passwort, Konflikte, Kzt-Feldsperre)
 — dabei 2 Bugs gefunden+behoben (Abschnitt 13: Date-Objekt-Bug,
 Status-Meldung-überschreibt-sich-Bug). Nav-Links zwischen `raumplan.html`,
 `musikerplan.html`, `admin.html` ergänzt.
+
+## 16. Werk-/Konzertliste (Phase 8-Erweiterung, 06.09.2026)
+
+Rafis Nummerierung ("401 = erstes Werk des Konzertes 4") ist jetzt
+vollständig aus dem Google Sheet bestätigt (Excel-Export, Tab "config",
+per `openpyxl` gelesen — zuverlässiger als der Google-Drive-Connector,
+der diesen Tab nicht vollständig lieferte). Zwei getrennte Listen:
+
+- **Konzertliste** (`konzerte`/`werke`-Tabellen): 11 Konzert-Blöcke
+  (Blockcode 000 = "Freundeskonzert", dann 100–1000 = Konzert 1–10),
+  je mit ihren Werken (Nummer = Konzert-Nr × 100 + Sequenz, z.B. 401 =
+  Konzert 4, 1. Werk "Mozart Duo B-Dur", Standard-Teilnehmer DU/YL).
+  36 Werke importiert (1 Eintrag "502a" mit nicht-numerischem Code
+  bewusst übersprungen, siehe PROGRESS.md).
+- **Werk-Vorlagen** (`werk_vorlagen`-Tabelle): 21 feste, wiederkehrende
+  Ablaufpunkte mit fixer Nummer 1–23 (Lücken bei 12/13) und
+  Standard-Teilnehmerkreis — Saaleinlass, Flügelstimmung, Dîner,
+  Musikerführung im Kloster, Musikeressen, Gottesdienst, Rede, Apero
+  Freundeskonzert, Abschlussrede und Bedankungen, Schlussapero,
+  Anlieferung/Stimmung Flügel, Aufbau Technik/Licht, Soundcheck
+  Mikrofon, Aufbau Apero, Freundeskonzert Rede, Umbau Saal, Practising
+  AL/PFB/VL, Apero bei Birgit Miller, Einführung Holliger.
+
+Beide Listen sind Datenquelle für `GET /api/werke/vorschlaege?q=<Text>`
+(`server/queries.js`: `SELECT_WERK_VORSCHLAEGE_SQL`, `server/index.js`)
+— Suche per Nummer- ODER Namens-Präfix über beide Tabellen kombiniert,
+liefert je Treffer den Standard-Teilnehmerkreis mit. `admin.html`
+nutzt das für ein `<datalist>`-Autocomplete am Werk-Feld: exakter
+Treffer (Nummer oder Name) füllt Teilnehmer (+ Typ falls leer) vor,
+bleibt änderbar. Musiker:innen jetzt mit echten Namen (17 Personen,
+vorher nur Kürzel bekannt) aus derselben Quelle in `musiker.name`
+nachgetragen.
+
+Schema: `db/migration-werke.sql` (Tabellen), `db/seed-werke-2026.sql`
+(Daten, programmatisch aus dem Excel generiert, nicht von Hand
+abgetippt — Konsistenz mit dem Original garantiert). Beide lokal
+end-to-end getestet (echtes Postgres, echter Server, echter
+Playwright-Browser: Eingabe "401" → Teilnehmer-Feld füllt sich mit
+"DU YL"). Bewusst OHNE Saison-Bezug — siehe PROGRESS.md "Offene
+Fragen" zur separat angefragten, aber vertagten Saison-Verwaltung.
