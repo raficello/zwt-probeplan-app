@@ -1,536 +1,248 @@
 # Fachliche Referenz: ZwT 2026 - Probeplan (Google Sheet)
 
-Diese Datei fasst zusammen, was über viele Sitzungen hinweg über das
-bestehende Google-Sheet-System herausgefunden/gebaut wurde. Ziel: eine
-Sitzung ohne Zugriff auf die bisherige Chat-Historie soll hieraus die
-fachliche Logik korrekt nachbauen können.
+Zusammenfassung der über viele Sitzungen ermittelten fachlichen Logik, damit
+eine Sitzung ohne Chat-Historie das System korrekt nachbauen kann. Wo
+"unklar/zu verifizieren" steht: sinnvolle Annahme treffen, in PROGRESS.md
+"Offene Fragen" vermerken, nicht auf Antwort warten.
 
-Wo unten "unklar/zu verifizieren" steht: eine sinnvolle Annahme treffen,
-in `PROGRESS.md` unter "Offene Fragen / Annahmen" vermerken, NICHT auf
-eine Antwort warten.
+**Hinweis 06.09.2026**: Diese Datei ist die fachliche Spezifikation, NICHT
+der Programmcode. Nach dem Datenverlust vom 05./06.09.2026 (PROGRESS.md
+"Kritischer Befund") ist der Code, der diese Regeln umsetzte, im
+Sandbox-Repo nicht mehr vorhanden — nur diese Spezifikation. Diese Datei
+wurde am 06.09.2026 aus Platzgründen (update_trigger-Grössenlimit) stark
+gekürzt; Detailnarrative (genaue Fehlermeldungen, Testverläufe) sind dabei
+verlorengegangen, die Kernfakten (Regeln, Schema, Fixes) sind erhalten.
 
-**Hinweis 06.09.2026**: Diese Datei beschreibt fachliche Regeln, ist aber
-NICHT der Programmcode selbst. Nach dem in PROGRESS.md beschriebenen
-Datenverlust vom 05./06.09.2026 ist der tatsächliche Code (der diese
-Regeln umsetzte) im aktuellen Repo-Stand NICHT mehr vorhanden — nur diese
-Spezifikation. Vor einem Neuaufbau von Phase 8 (oder früher) bitte
-PROGRESS.md "Kritischer Befund" lesen.
+## 1. Sheet "Master"
 
-## 1. Grunddaten: Sheet "Master"
-
-Sieben Wochentagsblöcke (Mo–So), untereinander im selben Blatt. Jeder
-Block:
-
-- Eine "Dat"-Zeile: Spalte A = `"Dat"`, Spalte B = Datum.
-- Eine Kopfzeile mit den Spaltennamen:
-  `Nr | Anfangszeit | Endzeit | Aud | Typ | Zeitanzeige | Werk | Teilnehmer | Ort | Bemerkungen | Zeit | Konsolenmeldung`
-- Darunter die eigentlichen Termine, eine Zeile pro Termin.
-
-Spaltenbedeutung:
-
-| Spalte | Name | Bedeutung |
-|---|---|---|
-| A | Nr | Laufnummer innerhalb des Tages (nur Anzeige) |
-| B | Anfangszeit | Startzeit, Format HH:MM |
-| C | Endzeit | Endzeit, Format HH:MM |
-| D | Aud | Numerischer Raum-/Auditorium-Code (z.B. 802, 604) |
-| E | Typ | Siehe Abschnitt 3 |
-| F | Zeitanzeige | Anzeige-String "HH:MM - HH:MM" (im Sheet eine Formel aus B/C) |
-| G | Werk | Bezeichnung des Termins/Stücks, Freitext |
-| H | Teilnehmer | Leerzeichen-getrennte Kürzel der beteiligten Musiker:innen |
-| I | Ort | Raumname als Text (z.B. "Kursaal", "Kirchgemeindehaus") — **unklar/zu verifizieren**: ob dies manuell per Dropdown gewählt wird (so legt es MasterOrtDayValidation.gs nahe) oder aus Spalte D per Formel abgeleitet ist. Beim Datenexport beide Spalten (D und I) mitnehmen und die tatsächliche Beziehung anhand der Live-Daten prüfen. |
-| J | Bemerkungen | Freitext-Anmerkung, wird auch für die automatische "neu/geändert"-Markierung verwendet (siehe Abschnitt 5) |
-| K | Zeit | Dauer, aus B/C berechnet |
-| L | Konsolenmeldung | Wird von der Konfliktprüfung beschrieben (siehe Abschnitt 4), sonst leer |
-
-Termine mit fehlender Anfangs-/Endzeit oder fehlendem Werk zählen nicht
-als echter Termin (Leerzeile).
+7 Wochentagsblöcke (Mo–So) im selben Blatt. Je Block: "Dat"-Zeile (A="Dat",
+B=Datum), Kopfzeile, dann Termine. Spalten: A Nr (Anzeige) | B Anfangszeit
+HH:MM | C Endzeit HH:MM | D Aud (Raum-Code, numerisch) | E Typ (Abschnitt 3)
+| F Zeitanzeige (Formel) | G Werk (Freitext) | H Teilnehmer (Kürzel,
+leerzeichengetrennt) | I Ort (Raumname als Text — Verhältnis zu D unklar,
+siehe Offene Fragen) | J Bemerkungen | K Zeit (Dauer) | L Konsolenmeldung
+(Konfliktprüfung). Zeilen ohne Anfangs-/Endzeit oder Werk = keine echten
+Termine.
 
 ## 2. Konfiguration
 
-- **Sheet "confRaeume"**: Spalte A = Liste aller Räume (Quelle für die
-  Ort-Auswahl). Spalte N = "Erlaubte Tage" pro Raum als Text (z.B.
-  `"Mo-Mi"`, `"Do-So"`, `"Mo,Mi,Fr"`), leer = an allen Tagen erlaubt.
-  Deutsche Tages-Codes: Mo, Di, Mi, Do, Fr, Sa, So. War **durchgesetzt seit
-  Phase 8** (`raeume.erlaubte_tage`, `raumTagErlaubt()` in
-  `server/validation.js`, geprüft in `pruefeKonflikte()` bei
-  POST/PUT `/api/termine`) — dieser Code ist Stand 06.09.2026 im
-  aktuellen Repo NICHT mehr vorhanden (siehe PROGRESS.md "Kritischer
-  Befund"), muss ggf. neu gebaut werden; die Business-Regel selbst
-  bleibt gültig.
-- **Raumwechsel-Pufferzeiten** ("roomIntervals"): eine Matrix, wie viel
-  Minuten Puffer zwischen zwei Terminen im selben Raum nötig sind (bzw.
-  zwischen verschiedenen Räumen bei Musiker-Übergängen). Quelle im
-  Original-Apps-Script als globale Variable `roomIntervals` referenziert
-  — **unklar/zu verifizieren**: die genaue Sheet-Quelle dieser Matrix
-  wurde in der bisherigen Arbeit nicht abschliessend lokalisiert. Beim
-  Datenexport gezielt danach suchen (vermutlich ein weiterer Bereich in
-  "config" oder "confRaeume").
+- Sheet "confRaeume": Spalte A = Raumliste, Spalte N = erlaubte Tage
+  (`"Mo-Mi"`, `"Do-So"`, `"Mo,Mi,Fr"`, leer=alle Tage; Codes Mo-So). War
+  durchgesetzt seit Phase 8 (`raeume.erlaubte_tage`, `raumTagErlaubt()` in
+  `server/validation.js`) — Code Stand 06.09.2026 verloren, Regel gilt.
+- Pufferzeiten-Matrix ("roomIntervals"): Minuten Puffer zwischen Terminen
+  im selben Raum. Sheet-Quelle nie abschliessend lokalisiert (unklar).
 
-## 3. Termin-Typen (Spalte "Typ")
+## 3. Termin-Typen
 
-| Typ | Bedeutung | Teilnehmer-Feld |
-|---|---|---|
-| *(leer)* | normale Probe/Termin | gefüllt |
-| `GP` | Generalprobe | gefüllt |
-| `Kzt` | Konzertzeit-Blockkopf — fasst mehrere `K`-Termine zusammen, wird JEDER Musiker:in angezeigt | **immer leer** |
-| `K` | einzelnes Konzertstück innerhalb eines `Kzt`-Blocks | gefüllt, normal filtern |
-| `Klf` | vereinzelt beobachtet, Bedeutung nicht abschliessend geklärt | unklar — vermutlich Flügel-bezogen ("Klavierflügel"), bei Unsicherheit wie einen normalen Termin ohne Sonderbehandlung behandeln |
+Leer/GP = normaler Termin, Teilnehmer gefüllt. `Kzt` = Konzertzeit-
+Blockkopf, fasst `K`-Termine zusammen, **wird JEDEM Musiker angezeigt**,
+Teilnehmer-Feld immer leer. `K` = einzelnes Konzertstück, Teilnehmer
+gefüllt, **normal filtern wie jeder andere Typ**. `Klf` unklar (vermutlich
+Flügel), ohne Sonderbehandlung behandeln. Wichtig: `Kzt` ist die EINZIGE
+Ausnahme von der Teilnehmer-Filterung — auch `K` wird normal gefiltert.
 
-**Wichtige Regel** (mehrfach in der bisherigen Arbeit korrigiert): `Kzt`
-wird JEDEM Musiker angezeigt (keine Teilnehmer-Prüfung nötig, da das Feld
-ohnehin leer ist). ALLE anderen Typen — inklusive `K` — werden ganz normal
-nach Teilnehmer-Kürzel gefiltert. Es gibt **keine** weitere
-typ-basierte Ausnahme. Ein Musiker sieht einen `K`-Termin NUR, wenn sein
-Kürzel in Spalte H steht.
+## 4. Konfliktprüfung
 
-## 4. Konfliktprüfung (Nachfolger von sortDay/checkDay)
-
-Pro Tag, nach Sortieren nach Anfangszeit:
-
-- Zwei Termine im selben Raum dürfen sich nicht überschneiden, und
-  zwischen Ende des einen und Start des nächsten muss der raumspezifische
-  Mindestabstand aus der Pufferzeiten-Matrix (Abschnitt 2) eingehalten
-  werden.
-- Verstösse werden aktuell als Text in Spalte "Konsolenmeldung"
-  geschrieben. Im neuen System: als Validierungsfehler/-warnung bei
-  Anlegen/Ändern eines Termins zurückgeben, nicht mehr in eine
-  eigene Spalte schreiben.
+Pro Tag nach Anfangszeit sortiert: zwei Termine im selben Raum dürfen sich
+nicht überschneiden und brauchen den raumspezifischen Mindestabstand
+(Abschnitt 2) zwischen Ende/Start. Im neuen System: Validierungsfehler bei
+Anlegen/Ändern zurückgeben statt in Spalte schreiben.
 
 ## 5. "Stand sperren" / Änderungsmarkierung
 
-Bisher (Sheets): ein Vergleichsschlüssel pro Termin aus
-`Anfangszeit|Endzeit|Aud|Typ|Werk|Teilnehmer` (ausdrücklich NICHT Ort,
-da von Aud abgeleitet/redundant, und NICHT Bemerkungen, da das
-Schreibziel der Markierung selbst ist). Beim Sperren wird der aktuelle
-Stand aller Schlüssel gespeichert. Danach wird jeder Termin, dessen
-Schlüssel nicht im gespeicherten Stand vorkommt, mit `[NEW]` markiert.
+Neues System: jeder Termin hat `updated_at`, Konfiguration speichert
+`locked_at`. "neu/geändert" = `updated_at > locked_at`. Kein
+Schlüsselvergleich wie im alten Sheet nötig.
 
-**Im neuen System viel einfacher nachzubauen**: jeder Termin bekommt ein
-`updated_at`. Eine Konfiguration speichert `locked_at`. Ein Termin gilt
-als "neu/geändert" einfach wenn `updated_at > locked_at` bzw. wenn er
-nach dem letzten Sperren angelegt wurde. Kein Schlüssel-Vergleich nötig.
+## 6. Ansichten & Farben
 
-## 6. Die zwei grafischen Ansichten
+Raumplan-Ansicht (Räume=Spalten) und Musiker-Ansicht (gewählte
+Musiker:innen=Spalten, je alle eigenen Termine + alle `Kzt`). Echte
+Timeline-Bibliothek (nicht festes Zeitraster) nötig, sonst können kurze
+Termine bei unabhängigem Runden von Start/Ende verschwinden.
 
-- **Raumplan-Ansicht**: Räume als Spalten, Zeit als Zeilen (15-Minuten-Raster
-  im alten Sheet), Termine als farbige Blöcke.
-- **Musiker-Ansicht**: dieselbe Logik, aber gewählte Musiker:innen als
-  Spalten statt Räume. Pro Musiker: alle Termine, bei denen sein Kürzel in
-  Teilnehmer steht, PLUS alle `Kzt`-Termine (siehe Abschnitt 3).
-
-Bekannter Bug im alten Sheet-Ansatz (dort inzwischen gefixt, aber ein
-guter Grund, im neuen System eine echte Timeline-Bibliothek statt eines
-festen Zeilenrasters zu verwenden): bei unabhängigem Runden von Start-
-und Endzeit auf ein festes Zeitraster können sehr kurze Termine (kürzer
-als eine halbe Rasterzeile) rechnerisch auf dieselbe Position fallen wie
-der nächste Termin und verschwinden. Mit einer kontinuierlichen
-Zeitachse (z.B. FullCalendar Resource-Timeline, vis-timeline) tritt das
-strukturell nicht auf.
-
-Farbcodierung nach Typ (aus dem PDF-Export übernehmbar):
-
-| Bedingung | Farbe |
-|---|---|
-| Typ = `Kzt` | Grün `#b6f2b6` |
-| Typ = `K` | Helleres Grün `#d7f2d7` |
-| Werk beginnt mit "GP" | Gelb `#fff3b0` |
-| Bemerkungen/Werk enthält "aufbau"/"apero"/"logistik"/"musikeressen" | Rosa `#fbd7ea` |
-| Bemerkungen/Werk enthält "stimmung" (Flügelstimmung) | Gelb `#fff3b0` |
-| sonst | Weiss |
-| "neu/geändert" seit letztem Sperren (Abschnitt 5) | eigene, deutlich abweichende Farbe (im Sheet: Orange `#ffd9a0`) — hat Vorrang vor allen anderen Regeln |
+Farben nach Typ: `Kzt`=Grün `#b6f2b6`, `K`=Hellgrün `#d7f2d7`, Werk beginnt
+"GP"=Gelb `#fff3b0`, Bemerkungen/Werk enthält aufbau/apero/logistik/
+musikeressen=Rosa `#fbd7ea`, enthält "stimmung"=Gelb, sonst Weiss.
+"Neu/geändert" (Abschnitt 5) = Orange `#ffd9a0`, hat Vorrang vor allem.
 
 ## 7. PDF-Export
 
-- **Gesamtplan**: ein PDF pro Tag, alle Räume, farbige Kästchen wie oben,
-  überlappende Termine im selben Raum nebeneinander ("Lanes"). War
-  implementiert: `GET /api/pdf/gesamtplan?datum=YYYY-MM-DD` (Phase 6,
-  `server/pdf.js` + `server/pdf-layout.js`). Bibliothek: `pdfkit`
-  (reines JS, kein Chromium/Puppeteer nötig). Läuft produktiv auf dem
-  VPS (Phase 6 war vor dem Datenverlust bereits ausgerollt).
-- **Individuelle Musikerpläne**: ein PDF pro Musiker:in mit nur den
-  eigenen Terminen (plus `Kzt`-Blöcke). War implementiert: `GET
-  /api/pdf/musikerplan?datum=YYYY-MM-DD&kuerzel=AB` (Phase 6). Teilt sich
-  die Zeichenlogik (`zeichneBaenderSeite`) mit dem Gesamtplan, eigene
-  Filterfunktion `filterTermineFuerMusiker` in `pdf-layout.js` (bildet
-  dieselbe Kzt-Regel wie `musiker-logik.js` ab, siehe PROGRESS.md
-  "Offene Fragen" zur bewussten Code-Duplikation zwischen Browser- und
-  Node-Modul). Ebenfalls bereits auf dem VPS ausgerollt.
-- Bisher: Freigabe der individuellen PDFs per QR-Code, der auf einen
-  Dropbox-Link (über TinyURL gekürzt) zeigt. **Für die neue Web-App**:
-  vermutlich unnötig — ein direkter Link auf die eigene Seite in der
-  Web-App reicht, Dropbox/TinyURL/QR nur falls explizit weiter gewünscht
-  (z.B. für Aushänge ohne Internetzugriff am Ort selbst).
+`GET /api/pdf/gesamtplan?datum=YYYY-MM-DD`: ein PDF/Tag, alle Räume, Lanes
+für Überschneidungen. `GET /api/pdf/musikerplan?datum=...&kuerzel=AB`:
+nur eigene Termine + `Kzt`. Bibliothek `pdfkit`. War implementiert
+(Phase 6, `server/pdf.js`+`pdf-layout.js`), Code Stand 06.09.2026
+verloren, lief produktiv auf VPS. QR/Dropbox/TinyURL für Web-App
+vermutlich unnötig (direkter Link reicht).
 
-## 8. Was NICHT übernommen werden muss
+## 8. Nicht zu übernehmen
 
-- Die alten Google-Sheets-Buttons/Dropdowns ("Sortieren"/"Überprüfen")
-  — in der neuen App ist jede Änderung sofort aktiv, keine manuelle
-  Sortier-/Prüf-Aktion nötig.
-- PropertiesService-Workarounds für Zeilen-Zuordnung — in einer echten
-  Datenbank hat jeder Termin einfach eine ID.
+Alte Sheets-Buttons ("Sortieren"/"Überprüfen") — App ist immer live.
+PropertiesService-Workarounds für Zeilen — DB hat IDs.
 
 ## 9. Infrastruktur (VPS)
 
-- **Bestellt und aktiv**: Infomaniak VPS Lite.
-- **IPv4-Adresse**: `83.228.213.202`
-- **SSH-Benutzername**: `ubuntu`
-- **Betriebssystem**: Ubuntu 26.04 LTS, 64-bit
-- Der private SSH-Schlüssel liegt ausschliesslich auf dem Computer von
-  Rafi (dem Auftraggeber) — er ist NICHT Teil dieses Repos und wird auch
-  nicht in Aufgaben-/Prompt-Texten hinterlegt.
-- **Der VPS selbst behält seinen Stand unabhängig von dieser Sandbox** —
-  er läuft mit dem produktiv bestätigten Code bis einschliesslich Phase 7
-  (Stand 05.09.2026). Der Datenverlust vom 05./06.09.2026 (siehe
-  PROGRESS.md) betrifft NUR diese Cloud-Sandbox, nicht den VPS. Falls
-  jemals der Verdacht besteht, dass auch der VPS-Stand von der
-  Spezifikation abweicht: den VPS als Quelle der Wahrheit behandeln,
-  nicht REFERENCE.md/PROGRESS.md.
+Infomaniak VPS Lite, IPv4 `83.228.213.202`, SSH-User `ubuntu`, Ubuntu
+26.04 LTS 64-bit. SSH-Key nur bei Rafi, nicht im Repo. VPS behält seinen
+Stand unabhängig von der Sandbox — läuft produktiv bis Phase 7 (Stand
+05.09.2026), vom Datenverlust NICHT betroffen; bei Zweifel VPS als Quelle
+der Wahrheit behandeln.
 
-**Wichtige, verifizierte Einschränkung**: Eine Cloud-Sandbox-Sitzung
-(auch eine nächtliche automatisierte Sitzung wie diese) hat **keinen
-allgemeinen Internetzugang zu beliebigen Servern/Ports**. Ein direkter
-TCP-Verbindungsversuch zur obigen IP auf Port 22 wurde getestet und
-schlägt sofort fehl ("Failed to connect ... after 0 ms") — erreichbar
-sind nur wenige fest erlaubte Hosts (z.B. npm-/PyPI-Registries,
-Anthropic-eigene Endpunkte), sonst nichts.
+Sandbox hat KEINEN allgemeinen Internetzugang (nur npm/PyPI/Anthropic-
+Hosts) — kein SSH zum VPS möglich, verifiziert. Deshalb: Config-Dateien
+lokal vorbereiten, committen, per SendUserFile als ZIP schicken, Rafi
+bringt sie selbst auf den Server.
 
-**Konsequenz für Phase 2 ("Server-Grundgerüst")**: Eine nächtliche
-Sitzung kann sich NICHT selbst per SSH auf den VPS verbinden und dort
-etwas einrichten — das würde nur Zeit verschwenden. Stattdessen:
-Konfigurationsdateien lokal vorbereiten und ins Repo committen
-(Dockerfile, docker-compose.yml, Caddyfile, Setup-/Bootstrap-Skript
-für unattended-upgrades, Backup-Cronjob usw.), und diese Dateien per
-`SendUserFile` an den Nutzer schicken mit der Bitte, sie ihm entweder
-selbst (Copy-Paste-Befehle) oder in einer Sitzung mit verlinktem
-Computer auf den Server zu bringen. Erst wenn der Nutzer bestätigt,
-dass die Dateien auf dem Server liegen und die Dienste laufen, gilt
-Phase 2 als abgeschlossen.
+Bekannte Stolperfallen (bestätigt 05.09.2026 beim ersten Rollout):
+Infomaniak hat eine EIGENE Firewall im Kundencenter/Manager
+(manager.infomaniak.com), getrennt von `ufw` — bei Portfreigabe (80/443)
+zuerst dort nachsehen, nicht nur `ufw status`. `docker compose exec
+<service> psql ... < datei.sql` braucht `-T`-Flag (sonst TTY-Fehler).
+`$POSTGRES_USER`/`$POSTGRES_DB` aus `.env` kennt nur `docker compose`
+selbst, nicht die interaktive Shell — vorher `set -a; source .env; set +a`.
 
-**Update 05.09.2026 — bestätigt und erledigt**: Rafi hat die
-Konfigurationsdateien über sein eigenes Terminal auf den VPS gebracht
-und `deploy/README.md` durchgearbeitet. `http://83.228.213.202/health`
-antwortet von aussen erfolgreich. Dabei gefundene, für künftige Arbeit
-wichtige Stolpersteine:
+## 10. Relationales Datenmodell (`db/schema.sql`)
 
-- **Infomaniak hat eine eigene Firewall im Kundencenter/Manager**,
-  getrennt von `ufw` auf dem Server selbst. Standardmässig ist dort nur
-  SSH (Port 22) freigegeben. Symptom war: `ufw status` zeigt "inactive"
-  (also OS-seitig nichts blockiert), `curl http://localhost/health` auf
-  dem Server funktioniert, aber `curl http://<ip>/health` von aussen
-  läuft in einen Timeout. Fix: im Manager (manager.infomaniak.com) beim
-  VPS unter "Firewall"/"Pare-feu" eingehende Regeln für die benötigten
-  Ports (80/TCP, 443/TCP) von 0.0.0.0/0 ergänzen. Bei jeder künftigen
-  Portfreigabe auf diesem VPS zuerst hier nachsehen, nicht nur `ufw`.
-- `docker compose exec <service> psql ... < datei.sql` (Input-
-  Umleitung) braucht das `-T`-Flag (`docker compose exec -T ...`), sonst
-  Fehler "cannot attach stdin to a TTY-enabled container".
-- `$POSTGRES_USER`/`$POSTGRES_DB` aus der `.env`-Datei sind NUR
-  `docker compose` selbst bekannt, nicht der interaktiven Shell des
-  Nutzers. Ein Befehl wie `psql -U "$POSTGRES_USER" ...` direkt im
-  Terminal scheitert deshalb mit "role root does not exist" (leere
-  Variable → Fallback auf den OS-Benutzer). Entweder Werte explizit
-  eintragen oder vorher `set -a; source .env; set +a` ausführen.
-
-## 10. Relationales Datenmodell (Phase 1, Entwurf)
-
-Entworfen aus Abschnitt 1–5. Ziel: das Master-Sheet plus confRaeume
-1:1 fachlich abbilden, ohne die Sheet-Eigenheiten (Formeln, freie
-Textspalten) zu übernehmen. War als `db/schema.sql` im Repo committet
-und per `psql "$DATABASE_URL" -f db/schema.sql` anwendbar — Stand
-06.09.2026 im aktuellen Repo NICHT mehr vorhanden (Datenverlust, siehe
-PROGRESS.md), das Design unten bleibt aber die massgebliche Vorlage für
-einen Neuaufbau:
+War im Repo, Stand 06.09.2026 verloren (Datenverlust), Design bleibt
+massgeblich für Neuaufbau:
 
 ```
 raeume
-  id            serial PK
-  name          text UNIQUE NOT NULL      -- entspricht confRaeume Spalte A / Master Spalte I ("Ort")
-  aud_code      text UNIQUE               -- entspricht Master Spalte D ("Aud"); nullable, da Beziehung
-                                           -- zu "name" noch unklar (siehe Abschnitt 1) — vorläufig als
-                                           -- eigenständiges, optionales Feld auf raeume statt als
-                                           -- separate Zuordnungstabelle, siehe Offene Fragen.
-  erlaubte_tage text[]                    -- Array von 'Mo'..'So'; NULL/leer = alle Tage erlaubt.
-                                           -- confRaeume Spalte N ("Mo-Mi" etc.) wird beim Import in
-                                           -- diese Liste expandiert (siehe migrate/lib.js: expandTageRange).
+  id serial PK
+  name text UNIQUE NOT NULL      -- confRaeume Spalte A / Master Spalte I
+  aud_code text UNIQUE           -- Master Spalte D; Beziehung zu name unklar
+  erlaubte_tage text[]           -- 'Mo'..'So'; NULL/leer = alle Tage
 
 musiker
-  id       serial PK
-  kuerzel  text UNIQUE NOT NULL           -- Master Spalte H, Leerzeichen-getrennt; ein Kürzel = ein Musiker
-  name     text                           -- Klarname, sofern bekannt; sonst NULL (nur Kürzel bekannt)
+  id serial PK
+  kuerzel text UNIQUE NOT NULL   -- Master Spalte H, Leerzeichen-getrennt
+  name text                      -- Klarname falls bekannt, sonst NULL
 
 termine
-  id           serial PK
-  wochentag    text NOT NULL              -- 'Mo'..'So', aus dem Sheet-Block (Abschnitt 1)
-  datum        date NOT NULL              -- aus der "Dat"-Zeile des jeweiligen Blocks
-  anfangszeit  time NOT NULL
-  endzeit      time NOT NULL
-  raum_id      int REFERENCES raeume(id) NOT NULL
-  typ          text                       -- NULL/'', 'GP', 'Kzt', 'K', 'Klf' (Abschnitt 3)
-  werk         text NOT NULL
-  bemerkungen  text
-  created_at   timestamptz NOT NULL DEFAULT now()
-  updated_at   timestamptz NOT NULL DEFAULT now()  -- Basis für Änderungsmarkierung, siehe Abschnitt 5
+  id serial PK
+  wochentag text NOT NULL        -- 'Mo'..'So'
+  datum date NOT NULL
+  anfangszeit time NOT NULL
+  endzeit time NOT NULL
+  raum_id int REFERENCES raeume(id) NOT NULL
+  typ text                       -- NULL/'', 'GP', 'Kzt', 'K', 'Klf'
+  werk text NOT NULL
+  bemerkungen text
+  created_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now()
 
 termin_musiker
-  termin_id  int REFERENCES termine(id) ON DELETE CASCADE
+  termin_id int REFERENCES termine(id) ON DELETE CASCADE
   musiker_id int REFERENCES musiker(id) ON DELETE CASCADE
   PRIMARY KEY (termin_id, musiker_id)
-  -- Auflösung von Master Spalte H (Teilnehmer). Bei Typ='Kzt' bleibt diese
-  -- Tabelle für den Termin leer (siehe Abschnitt 3 — wird trotzdem jedem
-  -- Musiker angezeigt, das ist Anwendungslogik, keine Datenbeziehung).
+  -- bei Typ='Kzt' bleibt leer, wird trotzdem jedem Musiker angezeigt (Anwendungslogik)
 
 raum_puffer
   von_raum_id int REFERENCES raeume(id)
   bis_raum_id int REFERENCES raeume(id)
   puffer_minuten int NOT NULL
   PRIMARY KEY (von_raum_id, bis_raum_id)
-  -- Abbildung der "roomIntervals"-Matrix (Abschnitt 2). Quelle im Sheet
-  -- noch nicht lokalisiert -> Tabelle wird vorbereitet, aber der
-  -- Migrations-Import befüllt sie vorerst nicht (siehe Offene Fragen).
-  -- Fehlender Eintrag für ein Raumpaar = Default-Puffer 0 Minuten
-  -- (Annahme, siehe Offene Fragen).
+  -- fehlender Eintrag = Default 0 Minuten (Annahme)
 
 konfiguration
   schluessel text PRIMARY KEY
-  wert       text
-  -- z.B. schluessel='locked_at', wert=ISO-Timestamp des letzten "Stand
-  -- sperren" (Abschnitt 5). Bewusst schlanke Key-Value-Tabelle statt
-  -- eigener Spalte/Tabelle, da aktuell nur dieser eine Wert gebraucht wird.
+  wert text                      -- z.B. 'locked_at' -> ISO-Timestamp
 ```
 
-Nicht übernommen aus dem Sheet, da abgeleitet/überflüssig (siehe auch
-Abschnitt 8): `Nr` (Anzeige-Laufnummer -> ergibt sich aus Sortierung nach
-`anfangszeit`), `Zeitanzeige` (Formel aus Anfangszeit/Endzeit -> im
-Frontend berechnen), `Zeit`/Dauer (ebenso ableitbar), `Konsolenmeldung`
-(wird durch Live-Validierung ersetzt, nicht mehr persistiert).
+Nicht übernommen (abgeleitet/überflüssig): Nr, Zeitanzeige, Zeit/Dauer,
+Konsolenmeldung (durch Live-Validierung ersetzt). `[NEW]` wird NICHT
+gespeichert, nur aus `updated_at`/`locked_at` berechnet.
 
-`[NEW]`-Markierung selbst wird NICHT in der Datenbank gespeichert
-(kein Textmarker in `bemerkungen`), sondern rein aus `updated_at` vs.
-`konfiguration.locked_at` berechnet (Abschnitt 5).
+## 11. Migrationsskript (`migrate/`)
 
-## 11. Migrationsskript-Grundgerüst (Phase 1)
+Stand 06.09.2026 verloren, Design bleibt Vorlage: `migrate/lib.js` (DB-frei,
+getestet) mit `expandTageRange(raw)` (expandiert "Mo-Mi"/"Mo,Mi,Fr" inkl.
+Wochenend-Wrap "So-Di"→[So,Mo,Di]), `istEchterTermin(row)` (Leerzeilen-
+Filter), `parseTeilnehmer(raw)`, `buildModel(masterBloecke, confRaeume)`
+(unbekannte Räume → Warnung + Auto-Anlage ohne Tagesbeschränkung, kein
+Abbruch). `migrate/migrate.js` CLI: `--master`/`--confraeume`/`--apply`
+(ohne `--apply` = Dry-Run ohne DB, `pg` nur bei `--apply` geladen).
+Sample-Dateien `migrate/sample-master.json`+`sample-confraeume.json`
+(kein echter Export vorhanden). Tests: `node --test migrate/test/*.test.js`
+(Ordner-Modus schlägt in Node 22.22 fehl, Glob verwenden).
 
-War im Repo unter `migrate/` (Stand 06.09.2026 NICHT mehr vorhanden,
-siehe PROGRESS.md — Design bleibt Vorlage für Neuaufbau):
+## 12. Deployment (`deploy/`)
 
-- `migrate/lib.js` — reine Kernlogik, DB-frei, getestet:
-  - `expandTageRange(raw)` — expandiert confRaeume-Spalte-N-Strings wie
-    `"Mo-Mi"` oder `"Mo,Mi,Fr"` in ein Array von Tages-Codes; wickelt bei
-    Bereichen über das Wochenende (`"So-Di"` -> `["So","Mo","Di"]`).
-  - `istEchterTermin(row)` — Leerzeilen-Filter (Abschnitt 1, letzter Satz).
-  - `parseTeilnehmer(raw)` — zerlegt Spalte H in Kürzel-Array.
-  - `buildModel(masterBloecke, confRaeume)` — normalisiert Rohdaten
-    (Array von Tagesblöcken + confRaeume-Array) in `{raeume, musiker,
-    termine, warnings}`. Unbekannte Raumnamen führen NICHT zum Abbruch,
-    sondern zu einer Warnung + automatisch angelegtem Raum ohne
-    Tages-Einschränkung (Annahme, siehe PROGRESS.md).
-- `migrate/migrate.js` — CLI: `node migrate/migrate.js [--master f]
-  [--confraeume f] [--apply]`. Ohne `--apply`: Dry-Run, druckt nur
-  Zusammenfassung + Warnungen. Mit `--apply` und `DATABASE_URL`
-  gesetzt: schreibt via `pg` transaktional in Postgres (Upsert für
-  raeume/musiker, Insert für termine/termin_musiker). `pg` wird nur bei
-  `--apply` per `require` geladen, damit der Dry-Run ohne `npm install`
-  läuft.
-- `migrate/sample-master.json` + `migrate/sample-confraeume.json` —
-  Platzhalterdaten im erwarteten Format (kein echter Sheet-Export
-  verfügbar, siehe PROGRESS.md "Offene Fragen").
-- `migrate/test/lib.test.js` — Tests für obige Funktionen, mit dem
-  eingebauten Node-Test-Runner (`npm test` bzw.
-  `node --test migrate/test/*.test.js` — WICHTIG: der Ordner-Modus
-  `node --test migrate/test/` schlägt in der aktuellen Node-Version
-  22.22 mit "Cannot find module" fehl, deshalb Glob auf `*.test.js`
-  verwenden).
+Stand 06.09.2026 verloren, läuft unverändert auf VPS: Docker-Compose
+(App+Postgres+Caddy), Caddyfile mit IP-Übergangsvariante (kein HTTPS bis
+Domain geklärt), `.env.example`, unattended-upgrades-Bootstrap.
+Backup-Cronjob (Swiss Backup) noch nicht begonnen, wartet auf Bestellung.
 
-Bei Vorliegen eines echten Sheet-Exports: als JSON im selben Format wie
-die sample-Dateien ablegen und per `--master`/`--confraeume` einlesen
-(bei CSV-Export vorher mit einem kleinen Konvertierungsschritt nach
-JSON wandeln).
+## 13. Technische Lehren (Fallstricke)
 
-## 12. Deployment-Konfiguration (Phase 2)
-
-War im Repo unter `deploy/` (Details/Anleitung: `deploy/README.md`,
-Stand 06.09.2026 NICHT mehr im Repo vorhanden — läuft aber unverändert
-produktiv auf dem VPS, siehe Abschnitt 9: Docker-Compose-Setup mit
-App-Container + Postgres + Caddy, Caddyfile mit Übergangs-/
-Produktivvariante, `.env.example`, Bootstrap-Skript für
-unattended-upgrades). Backup-Cronjob und Swiss-Backup-Integration:
-noch nicht begonnen, wartet auf Bestellung von Swiss Backup (siehe
-PROGRESS.md Phase 0/2).
-
-## 13. Technische Lehren aus der Implementierung (Fallstricke)
-
-Kurz gehaltene Sammlung von Fehlern, die während der Implementierung
-auftraten und beim nächsten Mal von vornherein vermieden werden sollten.
-Ausführlicher Kontext ggf. in der Git-Historie (`git log`).
-
-- **Dockerfile-COPY vergessen**: jede neue Datei unter `server/`, die per
-  `require()` oder `<script src>` eingebunden wird, muss auch im
-  `Dockerfile` landen (COPY-Zeile) bzw. unter `COPY public ./public`
-  (deckt alles unter `public/` automatisch ab) — sonst läuft es lokal,
-  aber der Container crasht mit "Cannot find module ...".
-- **node-postgres liefert `time`-Spalten als `"HH:MM:SS"`**, nicht
-  `"HH:MM"`. Jede Zeit-Parsing-Funktion (`server/validation.js:
-  timeToMinutes`) muss das akzeptieren, sonst brechen Vergleiche mit aus
-  der DB gelesenen Werten still (JS: `null + x = x`, keine Exception,
-  keine Fehlermeldung — nur falsches Ergebnis).
-- **vis-timeline: bei Datenwechsel NICHT `destroy()` + neu erzeugen** —
-  führt zu dauerhaft `visibility: hidden`. Stattdessen die bestehende
-  Instanz mit `setGroups()`/`setItems()`/`setWindow()` aktualisieren.
-- **Infomaniak-VPS hat eine eigene Firewall im Kundencenter/Manager**,
-  getrennt von `ufw` auf dem Server selbst — bei jeder neuen
-  Portfreigabe zuerst dort nachsehen (Details: Abschnitt 9).
-- **`docker compose exec` + Input-Umleitung (`< datei.sql`) braucht
-  `-T`** (sonst TTY-Konflikt); `$POSTGRES_USER`/`$POSTGRES_DB` aus
-  `.env` sind nur `docker compose` selbst bekannt, nicht der
-  interaktiven Shell (Details: Abschnitt 9).
-- **Unit-Tests mit Hand-gebauten Mock-Daten reichen bei DB-/Browser-naher
-  Logik nicht aus** — mehrere der obigen Bugs (Zeit-Format,
-  Timeline-Rendering) wurden erst durch echte End-to-End-Tests gegen
-  Postgres bzw. einen echten Browser (Playwright/Chromium) sichtbar.
-  Vor "fertig" immer beides testen, nicht nur Unit-Tests mit Mock-Daten.
-  Dasselbe gilt für PDF-Erzeugung: erst per echtem PDF-Tool prüfen (z.B.
-  `qpdf --check`, `pdftotext`/`pdftoppm` aus poppler-utils), nicht nur
-  "die Funktion wirft keinen Fehler".
-- **npm-Paket `pdf-parse` ist inkompatibel mit von `pdfkit` erzeugten
-  PDFs** — meldet "bad XRef entry" selbst bei einem minimalen
-  pdfkit-"Hallo Welt"-PDF, obwohl `qpdf --check` und `pdftotext`
-  dieselbe Datei klaglos akzeptieren und den Text korrekt extrahieren.
-  Für Tests, die den Textinhalt eines erzeugten PDFs prüfen sollen,
-  `pdftotext` (poppler-utils, per `child_process`) verwenden, nicht
-  `pdf-parse`.
-- **NIE einen `WWW-Authenticate`-Header auf eine 401-Antwort setzen, die
-  per `fetch()` aus eigenem JavaScript geprüft werden soll** (Phase 7,
-  Organisator:innen-Login) — der Browser fängt das selbst ab und
-  versucht, sein EIGENES natives Zugangsdaten-Dialogfeld zu öffnen. In
-  Headless-Umgebungen (z.B. Playwright-Tests) hängt der `fetch()`-Aufruf
-  dadurch für immer, ohne jemals eine Antwort oder einen Fehler zu
-  liefern — per echtem Browser-Test entdeckt, nicht durch `curl` (das
-  Problem existiert dort nicht, weil `curl` keinen nativen Auth-Dialog
-  kennt). In echten Browsern führt derselbe Header zu einem
-  verwirrenden zweiten Login-Popup neben einem eigenen `prompt()`-Dialog.
-  Eine 401-JSON-Antwort ohne diesen Header wird dagegen ganz normal an
-  `fetch()` durchgereicht.
-- **Ein als "✅ abgeschlossen" markierter Plan-Punkt war es nicht wirklich**:
-  Phase 3 (Terminverwaltung) war seit ihrem Abschluss als fertig markiert
-  und listete "Wochentags-Raumbeschränkung (Nachfolger
-  MasterOrtDayValidation.gs)" explizit als erledigtes Deliverable — dabei
-  gab es dafür nie Code (`raeume.erlaubte_tage` war im Schema angelegt,
-  wurde aber nirgends geprüft). Aufgefallen erst beim Bau der
-  Terminverwaltung (Phase 8), weil dort erstmals bewusst nachgesehen
-  wurde, ob diese Regel überhaupt greift. Lehre: ein Haken in PROGRESS.md
-  ist keine Garantie — bei Unsicherheit im Code selbst nachsehen (`grep`
-  nach dem erwarteten Feld/der erwarteten Prüfung), nicht nur dem
-  Status-Text vertrauen.
-- **node-postgres liefert `date`-Spalten als JS-Date-Objekt** (Mitternacht
-  UTC), nicht als `"YYYY-MM-DD"`-String — `JSON.stringify` macht daraus
-  einen vollen ISO-Zeitstempel (`"2026-09-07T00:00:00.000Z"`). Ein
-  `<input type="date">`, dem dieser Wert direkt zugewiesen wird, bleibt
-  dadurch STILL leer (kein Fehler, keine Konsolen-Meldung) — per echtem
-  Browser-Test gefunden, als die Terminverwaltung (Phase 8) `t.datum`
-  aus der API-Antwort erstmals in ein Formular schrieb. Fix: zentral in
-  `groupTermineRows` (`server/queries.js`) normalisieren, nicht jedem
+- Jede neue `server/`-Datei braucht eine Dockerfile-COPY-Zeile (oder liegt
+  unter `public/`, das komplett kopiert wird) — sonst crasht der Container.
+- node-postgres liefert `time` als `"HH:MM:SS"`, nicht `"HH:MM"` —
+  Zeit-Parsing muss das akzeptieren, sonst stille Fehlvergleiche.
+- vis-timeline: bei Datenwechsel `setGroups()`/`setItems()`/`setWindow()`
+  nutzen, NICHT `destroy()`+neu erzeugen (sonst dauerhaft `hidden`).
+- `docker compose exec <service> psql ... < datei.sql` braucht `-T`.
+- Unit-Tests mit Mock-Daten reichen bei DB-/Browser-naher Logik nicht —
+  immer zusätzlich gegen echtes Postgres/Browser (Playwright) testen.
+  Für PDFs: `qpdf --check`/`pdftotext` statt nur "wirft keinen Fehler".
+- `pdf-parse` ist inkompatibel mit `pdfkit`-PDFs (false positive "bad
+  XRef") — `pdftotext` (poppler-utils) für Textprüfung verwenden.
+- NIE `WWW-Authenticate`-Header auf eine 401 setzen, die per `fetch()`
+  geprüft wird — Browser versucht eigenen nativen Login-Dialog, `fetch()`
+  hängt in Headless-Umgebungen für immer. Reines 401-JSON ohne den Header
+  funktioniert normal.
+- Ein "✅ abgeschlossen" in PROGRESS.md ist keine Garantie: die
+  Wochentags-Raumbeschränkung stand als erledigt, war aber nie geprüft
+  (Feld im Schema, aber nirgends abgefragt) — erst bei Phase 8 aufgefallen.
+  Bei Unsicherheit im Code selbst nachsehen (grep), nicht nur Status-Text.
+- node-postgres liefert `date` als JS-Date-Objekt (Mitternacht UTC), nicht
+  als String — direkt in `<input type="date">` geschrieben bleibt es still
+  leer. Zentral normalisieren (z.B. in der Query-Funktion), nicht jedem
   Aufrufer überlassen.
-- **Ein `fetch()`-Erfolgs-Handler, der eine zweite asynchrone Funktion
-  aufruft und DANACH synchron eine Statusmeldung setzt, kann sich selbst
-  überschreiben**, wenn die zweite Funktion den Status ebenfalls setzt
-  (z.B. "Lade..." beim Start, "" bei Erfolg) — die zweite (spätere)
-  Zuweisung gewinnt, auch wenn sie aus dem "früheren" Aufruf stammt,
-  weil beides Promises sind. Gefunden per echtem Browser-Test in
-  `admin.html` (Phase 8): "Termin angelegt." verschwand sofort wieder,
-  weil das anschliessende `ladeTag()` beim Abschluss seines eigenen
-  Fetches den Status zurücksetzte. Fix: `ladeTag()` gibt sein Promise
-  zurück, die Erfolgsmeldung wird erst in einem `.then()` NACH diesem
-  Promise gesetzt, nicht direkt im Anschluss an den (nicht abgewarteten)
-  Aufruf.
-- **NEU 06.09.2026 — der wichtigste Fallstrick von allen: "im Repo
-  committet" ist NICHT gleich "gesichert"**, solange `git push` nicht
-  funktioniert. Die Cloud-Sandbox, in der eine nächtliche (und
-  vermutlich auch eine interaktive Tages-) Sitzung läuft, kann
-  zwischenzeitlich komplett und rückstandslos neu bereitgestellt
-  werden — bestätigt in der Nacht vom 05. auf den 06.09.2026: das
-  gesamte Verzeichnis inkl. `.git`-Historie war weg, keine Spuren im
-  gesamten restlichen Dateisystem. Betroffen war der komplette
-  Phase-8-Code (`admin.html`, `raumTagErlaubt`, `GET /api/raeume`,
-  `server/test/index.test.js`, beide Bugfixes oben), der am Vortag
-  gebaut, aber noch nicht per ZIP an Rafi verschickt worden war ("ZIP
-  schicken, sobald er bereit ist zu deployen" — genau diese Verzögerung
-  war die Lücke). Lehre: ein lokaler `git commit` schützt nur vor
-  Verlust durch eigene Fehler in derselben Sitzung, NICHT vor einer
-  Neubereitstellung der ganzen Sandbox. Die einzigen wirklich robusten
-  Sicherungen sind (a) ein erfolgreicher `git push` zu GitHub (aktuell
-  durch einen Proxy-Bug blockiert, siehe PROGRESS.md) und (b) ein
-  tatsächlich an Rafi verschicktes ZIP (`SendUserFile`). Deshalb ab
-  sofort: ZIP-Versand nach jeder Code-Änderung SOFORT, nicht erst bei
-  Deploy-Bereitschaft (siehe README.md Arbeitsweise Punkt 4).
+- Ein `fetch()`-Erfolgs-Handler, der danach eine zweite async Funktion
+  aufruft, die selbst eine Statusmeldung setzt, kann sich selbst
+  überschreiben (spätere Promise-Auflösung gewinnt) — Erfolgsmeldung erst
+  im `.then()` NACH der zweiten Funktion setzen, nicht direkt danach.
+- **NEU 06.09.2026, wichtigster Fallstrick**: "im Repo committet" ist
+  NICHT gleich "gesichert", solange `git push` nicht funktioniert. Die
+  Cloud-Sandbox kann zwischen Sitzungen komplett neu bereitgestellt
+  werden (bestätigt in der Nacht 05./06.09.2026: kompletter Phase-8-Code
+  weg, keine Spuren im Dateisystem) — betroffen war Code, der noch nicht
+  per ZIP verschickt war. Einzige robuste Sicherung: erfolgreicher `git
+  push` ODER tatsächlich verschicktes ZIP. Deshalb: ZIP SOFORT nach jeder
+  Code-Änderung, nicht erst bei Deploy-Bereitschaft.
 
 ## 14. Zugriffsmodell (Phase 7)
 
-Entschieden von Rafi (05.09.2026, interaktive Tagsitzung): **Variante A**
-— Lesen ist für alle offen, die den Link/die VPS-Adresse kennen (Raumplan-
-und Musiker-Ansicht, PDF-Export, `GET /api/*`); kein Login, kein Konto
-pro Musiker:in nötig. NUR Schreiben (Termine anlegen/ändern/löschen,
-`POST /api/termine`, `PUT /api/termine/:id`, `DELETE /api/termine/:id`,
-sowie "Stand sperren", `POST /api/stand/sperren`) ist geschützt — mit
-einem einzigen, gemeinsamen Passwort für Organisator:innen, nicht mit
-individuellen Konten.
+Variante A (Rafi, 05.09.2026): Lesen komplett offen (Raumplan/Musiker-
+Ansicht, PDF, `GET /api/*`), kein Login. NUR Schreiben (`POST/PUT/DELETE
+/api/termine*`, `POST /api/stand/sperren`) geschützt mit einem
+gemeinsamen Organisator:innen-Passwort (nicht individuell). War
+umgesetzt: `server/auth.js`, `pruefeOrganisatorAuth`-Middleware,
+`Authorization: Basic base64(benutzer:passwort)` OHNE echten
+Basic-Auth-Handshake (kein `WWW-Authenticate`, siehe Abschnitt 13).
+`ORGANISATOR_BENUTZER` konfigurierbar (Default `organisator`), Frontend
+fragt Passwort per `window.prompt` einmal pro Seitenaufruf, nur im
+Speicher. `ORGANISATOR_PASSWORT` Pflicht in `.env` — fehlt es, Schreiben
+komplett deaktiviert (503). Code Stand 06.09.2026 verloren, lief
+produktiv, von Rafi bestätigt.
 
-Umsetzung (läuft produktiv auf dem VPS, Code dort vorhanden, im
-Sandbox-Repo Stand 06.09.2026 nicht mehr): `server/auth.js`, Middleware
-`pruefeOrganisatorAuth`, auf die vier genannten Schreib-Routen
-angewendet. Zugangsdaten werden im "Basic"-Format übertragen
-(`Authorization: Basic base64(benutzer:passwort)`), aber bewusst OHNE
-echten HTTP-Basic-Auth-Handshake (kein `WWW-Authenticate`-Header — siehe
-Abschnitt 13, sonst hängt/stört das den Browser). Benutzername ist
-serverseitig per `ORGANISATOR_BENUTZER` konfigurierbar (Default
-`organisator`), das Frontend (`raumplan.html`) hat diesen Default fest
-verdrahtet und fragt nur nach dem Passwort (`window.prompt`), einmal pro
-Seitenaufruf, im Speicher gehalten statt persistiert.
-`ORGANISATOR_PASSWORT` ist Pflicht in der `.env` — fehlt es, wird
-Schreiben komplett deaktiviert (503) statt versehentlich offen zu
-bleiben (analog zu `POSTGRES_PASSWORD`, siehe Abschnitt 12).
+## 15. Terminverwaltung / admin.html (Phase 8)
 
-## 15. Terminverwaltung / Admin-Oberfläche (Phase 8)
+**Stand 06.09.2026: verloren (Datenverlust) UND noch nicht auf dem VPS
+ausgerollt** — existiert evtl. nirgends mehr ausser einem ZIP bei Rafi.
+Spezifikation für Neuaufbau (war fertig gebaut+getestet 05.09.2026):
 
-**Stand 06.09.2026: dieser Code ist im aktuellen Sandbox-Repo NICHT mehr
-vorhanden (Datenverlust, siehe PROGRESS.md "Kritischer Befund") und noch
-nicht auf dem VPS ausgerollt — d.h. er existiert aktuell möglicherweise
-nirgends mehr ausser evtl. in einem ZIP bei Rafi.** Die folgende
-Beschreibung ist die Spezifikation für einen Neuaufbau, keine Bestätigung,
-dass der Code noch existiert.
-
-Bisher (bis Phase 7) gab es für Termine nur die rohe CRUD-API — Anlegen/
-Ändern/Löschen musste per curl o.ä. passieren. Für den in Phase 8 vorgesehenen
-Testlauf mit echten Terminen einer Probenwoche (siehe PROGRESS.md) reicht das
-nicht: **`server/public/admin.html`** war die dafür gebaute Oberfläche.
-
-- Tagesansicht (Datum vor/zurück wie Raumplan-/Musiker-Ansicht) mit
-  Tabelle aller Termine dieses Tages; Zeilen mit "neu/geändert" seit dem
-  letzten Sperren farblich hervorgehoben (Abschnitt 5).
-- "+ Neuer Termin" öffnet ein Formular; "Bearbeiten" in einer Zeile
-  öffnet dasselbe Formular vorausgefüllt (PUT statt POST).
-- Raum-Auswahl über den in Phase 8 neu ergänzten Endpunkt **`GET
-  /api/raeume`** (liefert ALLE Räume, auch ohne Termin an diesem Tag —
-  vorher gab es dafür keinen Endpunkt, siehe PROGRESS.md "Bekannte
-  Einschränkung" zu Phase 4). Zeigt pro Raum direkt die erlaubten
-  Wochentage an (Abschnitt 2).
-- Wochentag wird aus dem gewählten Datum automatisch berechnet
-  (`wochentagVonDatum`), nicht separat vom Menschen ausgewählt — schliesst
-  Tippfehler-Inkonsistenzen zwischen Datum und Wochentag von vornherein
-  aus.
-- Typ=Kzt sperrt das Teilnehmer-Feld im Formular (statt es nur zu
-  verstecken) — visuelle Erinnerung an die Business-Regel aus
-  Abschnitt 3, nicht nur serverseitig durchgesetzt.
-- Validierungs- (400) und Konfliktfehler (409, inkl. der in Phase 8
-  nachgerüsteten Wochentags-Raumbeschränkung) werden direkt im Formular
-  angezeigt, nicht nur als generische Fehlermeldung.
-- Auth-Muster identisch zu `raumplan.html` (Abschnitt 14):
-  `window.prompt` einmal pro Seitenaufruf, Passwort verworfen bei 401.
-- War end-to-end verifiziert: echtes Postgres (`server/test/index.test.js`)
-  + echter Browser (Playwright: Anlegen/Bearbeiten/Löschen, falsches
-  Passwort, Überschneidungs- und Wochentags-Konflikt, Kzt-Feldsperre).
-  Dabei zwei echte Bugs gefunden und behoben — Details in Abschnitt 13
-  (`datum` als Date-Objekt statt String; Status-Meldung, die sich selbst
-  überschreibt).
-- Nav-Links zwischen allen drei Seiten (`raumplan.html`,
-  `musikerplan.html`, `admin.html`) ergänzt.
+Tagesansicht mit Terminliste (neu/geändert farblich hervorgehoben, siehe
+Abschnitt 5), "+ Neuer Termin"/"Bearbeiten"-Formular (POST/PUT). Raum-
+Auswahl über `GET /api/raeume` (neu in Phase 8: liefert ALLE Räume, auch
+ohne Termin heute — zeigt erlaubte Wochentage pro Raum). Wochentag aus
+Datum automatisch berechnet (`wochentagVonDatum`), nicht manuell wählbar.
+Typ=Kzt sperrt Teilnehmer-Feld im Formular. Validierungs-(400)/Konflikt-
+(409)-Fehler direkt im Formular angezeigt. Auth wie `raumplan.html`
+(Abschnitt 14). War end-to-end verifiziert (echtes Postgres + Playwright:
+Anlegen/Bearbeiten/Löschen, falsches Passwort, Konflikte, Kzt-Feldsperre)
+— dabei 2 Bugs gefunden+behoben (Abschnitt 13: Date-Objekt-Bug,
+Status-Meldung-überschreibt-sich-Bug). Nav-Links zwischen `raumplan.html`,
+`musikerplan.html`, `admin.html` ergänzt.
