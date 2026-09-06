@@ -5,12 +5,15 @@ eine Sitzung ohne Chat-Historie das System korrekt nachbauen kann. Wo
 "unklar/zu verifizieren" steht: sinnvolle Annahme treffen, in PROGRESS.md
 "Offene Fragen" vermerken, nicht auf Antwort warten.
 
-**Hinweis 06.09.2026**: Diese Datei ist die fachliche Spezifikation, NICHT
-der Programmcode. Nach dem Datenverlust vom 05./06.09.2026 (PROGRESS.md
-"Kritischer Befund") ist der Code, der diese Regeln umsetzte, im
-Sandbox-Repo nicht mehr vorhanden — nur diese Spezifikation. Diese Datei
-wurde am 06.09.2026 aus Platzgründen (update_trigger-Grössenlimit) stark
-gekürzt; Detailnarrative (genaue Fehlermeldungen, Testverläufe) sind dabei
+**Update 06.09.2026**: Der Code für Phase 1–7 (`db/`, `migrate/`,
+`server/`, `deploy/`) war nach einer Sandbox-Neubereitstellung
+verloren, wurde aber NOCH IN DERSELBEN NACHT aus einem ZIP-Backup von
+Rafi vollständig wiederhergestellt (siehe PROGRESS.md) — die
+"Code verloren"-Hinweise unten sind damit nur noch für Phase 8
+(`admin.html`, `raumTagErlaubt()`, `GET /api/raeume`) aktuell, nicht
+mehr für Phase 1–7. Diese Datei wurde ausserdem am 06.09.2026 stark
+gekürzt (fälschlich angenommenes update_trigger-Grössenlimit, siehe
+PROGRESS.md "Offene Fragen" — Korrektur); Detailnarrative sind dabei
 verlorengegangen, die Kernfakten (Regeln, Schema, Fixes) sind erhalten.
 
 ## 1. Sheet "Master"
@@ -29,7 +32,7 @@ Termine.
 - Sheet "confRaeume": Spalte A = Raumliste, Spalte N = erlaubte Tage
   (`"Mo-Mi"`, `"Do-So"`, `"Mo,Mi,Fr"`, leer=alle Tage; Codes Mo-So). War
   durchgesetzt seit Phase 8 (`raeume.erlaubte_tage`, `raumTagErlaubt()` in
-  `server/validation.js`) — Code Stand 06.09.2026 verloren, Regel gilt.
+  `server/validation.js`) — Code Stand 06.09.2026 verloren (Phase 8, NICHT im wiederhergestellten Rafi-ZIP enthalten), Regel gilt.
 - Pufferzeiten-Matrix ("roomIntervals"): Minuten Puffer zwischen Terminen
   im selben Raum. Sheet-Quelle nie abschliessend lokalisiert (unklar).
 
@@ -72,8 +75,8 @@ musikeressen=Rosa `#fbd7ea`, enthält "stimmung"=Gelb, sonst Weiss.
 `GET /api/pdf/gesamtplan?datum=YYYY-MM-DD`: ein PDF/Tag, alle Räume, Lanes
 für Überschneidungen. `GET /api/pdf/musikerplan?datum=...&kuerzel=AB`:
 nur eigene Termine + `Kzt`. Bibliothek `pdfkit`. War implementiert
-(Phase 6, `server/pdf.js`+`pdf-layout.js`), Code Stand 06.09.2026
-verloren, lief produktiv auf VPS. QR/Dropbox/TinyURL für Web-App
+(Phase 6, `server/pdf.js`+`pdf-layout.js`), Code wiederhergestellt
+(06.09.2026, aus Rafis ZIP), lief/läuft produktiv auf VPS. QR/Dropbox/TinyURL für Web-App
 vermutlich unnötig (direkter Link reicht).
 
 ## 8. Nicht zu übernehmen
@@ -104,8 +107,8 @@ selbst, nicht die interaktive Shell — vorher `set -a; source .env; set +a`.
 
 ## 10. Relationales Datenmodell (`db/schema.sql`)
 
-War im Repo, Stand 06.09.2026 verloren (Datenverlust), Design bleibt
-massgeblich für Neuaufbau:
+War im Repo, Stand 06.09.2026 aus Rafis ZIP wiederhergestellt (siehe
+PROGRESS.md), Design bleibt massgeblich:
 
 ```
 raeume
@@ -156,7 +159,7 @@ gespeichert, nur aus `updated_at`/`locked_at` berechnet.
 
 ## 11. Migrationsskript (`migrate/`)
 
-Stand 06.09.2026 verloren, Design bleibt Vorlage: `migrate/lib.js` (DB-frei,
+Stand 06.09.2026 aus Rafis ZIP wiederhergestellt, 13 Tests grün: `migrate/lib.js` (DB-frei,
 getestet) mit `expandTageRange(raw)` (expandiert "Mo-Mi"/"Mo,Mi,Fr" inkl.
 Wochenend-Wrap "So-Di"→[So,Mo,Di]), `istEchterTermin(row)` (Leerzeilen-
 Filter), `parseTeilnehmer(raw)`, `buildModel(masterBloecke, confRaeume)`
@@ -169,7 +172,7 @@ Sample-Dateien `migrate/sample-master.json`+`sample-confraeume.json`
 
 ## 12. Deployment (`deploy/`)
 
-Stand 06.09.2026 verloren, läuft unverändert auf VPS: Docker-Compose
+Stand 06.09.2026 aus Rafis ZIP wiederhergestellt, läuft unverändert auf VPS: Docker-Compose
 (App+Postgres+Caddy), Caddyfile mit IP-Übergangsvariante (kein HTTPS bis
 Domain geklärt), `.env.example`, unattended-upgrades-Bootstrap.
 Backup-Cronjob (Swiss Backup) noch nicht begonnen, wartet auf Bestellung.
@@ -225,8 +228,8 @@ Basic-Auth-Handshake (kein `WWW-Authenticate`, siehe Abschnitt 13).
 `ORGANISATOR_BENUTZER` konfigurierbar (Default `organisator`), Frontend
 fragt Passwort per `window.prompt` einmal pro Seitenaufruf, nur im
 Speicher. `ORGANISATOR_PASSWORT` Pflicht in `.env` — fehlt es, Schreiben
-komplett deaktiviert (503). Code Stand 06.09.2026 verloren, lief
-produktiv, von Rafi bestätigt.
+komplett deaktiviert (503). Code Stand 06.09.2026 aus Rafis ZIP
+wiederhergestellt, lief/läuft produktiv, von Rafi bestätigt.
 
 ## 15. Terminverwaltung / admin.html (Phase 8)
 

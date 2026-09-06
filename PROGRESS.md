@@ -5,73 +5,90 @@ https://claude.ai/code/artifact/f8082705-72cd-41e7-b8c7-63f1ff74fe81
 
 Immer zuerst diese Datei lesen, dann REFERENCE.md (Abschnitt 13: Fallstricke).
 
-## ⚠️ KRITISCHER BEFUND (06.09.2026): Code-Verlust bestätigt
+## ⚠️ Code-Verlust vom 06.09.2026 — GROSSTEILS BEHOBEN
 
-Sitzung fand `/home/claude/zwt-probeplan-app` komplett leer vor (kein
-`.git`) — bestätigt per Suche über das gesamte Dateisystem, ergebnislos.
-Betroffen: der GESAMTE Programmcode (`db/`, `migrate/`, `server/`,
-`deploy/`), nicht nur diese 3 Markdown-Dateien. Am kritischsten: der erst
-am Vortag (05.09.2026) gebaute Phase-8-Code (`admin.html`,
-`raumTagErlaubt()`, `GET /api/raeume`, Tests — REFERENCE.md Abschnitt 15)
-war laut vorgefundenem Text noch NICHT als ZIP an Rafi verschickt —
-vermutlich echter, nicht wiederherstellbarer Verlust.
+Nächtliche Sitzung fand `/home/claude/zwt-probeplan-app` komplett leer
+vor (Sandbox-Neubereitstellung). NOCH IN DERSELBEN NACHT hat Rafi ein
+eigenes ZIP-Backup vom Abend des 05.09.2026 beigesteuert
+(`zwtprobeplanappfull_22.51.19.zip`), das den **kompletten Code für
+Phase 1–7** enthält (`db/`, `migrate/`, `server/`, `deploy/` — Schema,
+Migrationsskript, CRUD-API, Konfliktprüfung, Raumplan-/Musiker-Ansicht,
+Stand sperren, PDF-Export, Organisator:innen-Login). Zurückgespielt und
+verifiziert: 50 Tests grün (13 `migrate/test`, 37 DB-freie
+`server/test`). Damit ist der Datenverlust für Phase 1–7 behoben.
 
-NICHT betroffen: Phase 0–7 laufen unverändert produktiv auf dem VPS
-(`83.228.213.202`) — nur die Sandbox war leer, der VPS nicht.
+**Weiterhin fehlend**: Phase-8-Code (`server/public/admin.html`,
+`raumTagErlaubt()`-Durchsetzung in `server/validation.js`, `GET
+/api/raeume` in `server/index.js`, `server/test/index.test.js`) war in
+diesem ZIP NICHT enthalten (Datei-Zeitstempel darin gehen nur bis
+~14:00 Uhr) — vermutlich erst später am 05.09.-Abend gebaut. **Rafi
+gebeten, ein späteres ZIP von diesem Abend zu suchen** (nach ca. 23
+Uhr) — falls vorhanden, enthält es vermutlich auch admin.html.
 
-Bewusst NICHT versucht, den Code blind aus REFERENCE.md nachzubauen
-(kein kleines Teilstück mehr, hohes Risiko stiller Fehler ohne
-menschliche Verifikation). Stattdessen: Befund dokumentiert, Rafi per
-Push-Benachrichtigung informiert, Prozess gefixt (README.md Punkt 4: ZIP
-SOFORT nach jeder Code-Änderung, nicht erst bei Deploy-Bereitschaft).
-Diese Datei und REFERENCE.md ausserdem am 06.09.2026 stark gekürzt
-(update_trigger-Grössenlimit ~konnte ~50 KB nicht verarbeiten, ~20 KB
-ging durch) — Detailnarrative gingen dabei verloren, Kernfakten blieben.
+**GitHub**: Rafi hat die Repo-URL mitgeteilt
+(`https://github.com/raficello/zwt-probeplan-app.git`, jetzt dauerhaft
+in README.md). Remote gesetzt, Push versucht — schlägt NICHT (nur) am
+bekannten generischen Cowork-Proxy-Bug fehl, sondern konkret mit:
+"access denied by the git proxy: raficello/zwt-probeplan-app is not in
+this session's authorized repository set... add the repository to the
+session's sources." Das ist vermutlich eine Berechtigungs-/
+Verbindungseinstellung auf Rafis Seite (GitHub-Verbindung in den
+Cowork-Einstellungen muss dieses Repo als Quelle erlauben), keine
+Cowork-Infrastruktur-Störung. **Für Rafi**: bitte prüfen/einrichten,
+danach sollte der nächtliche Push funktionieren.
 
-**Für Rafi**: prüfen ob vom 05.09.2026-Abend doch ein ZIP mit admin.html
-vorliegt — falls ja, in neuer Sitzung hochladen, kein Neuaufbau nötig.
-Falls nein: Phase 8 in Tagsitzung neu bauen (Spez.: REFERENCE.md
-Abschnitt 15). Ausserdem: GitHub-Repo-URL einmalig mitteilen, damit sie
-dauerhaft in README.md eingebettet werden kann.
-
-**Nächster Schritt**: prüfen ob Rafi reagiert hat. Sonst Neuaufbau
-beginnend mit `db/schema.sql` (Abschnitt 10), `migrate/*` (Abschnitt 11),
-dann Phase 8 (Abschnitt 15).
+**Korrektur zum update_trigger-"Grössenlimit"** (fälschlich in einer
+früheren Fassung dieser Nacht angenommen): der Fehler "result exceeds
+maximum allowed tokens" bei `update_trigger`-Aufrufen bedeutet NICHT,
+dass das Update fehlgeschlagen ist — es bedeutet nur, dass die
+Bestätigungsantwort zu gross zum Anzeigen ist. Verifiziert per
+`list_triggers`: ein Aufruf mit ~26 KB Prompt UND ein nachfolgender
+namensonly-Aufruf (kein neuer Prompt) zeigten BEIDE denselben
+"exceeds maximum tokens"-Fehler, aber der Prompt-Inhalt war trotzdem
+korrekt gespeichert. Das Grössenlimit-Problem besteht also vermutlich
+NICHT wie angenommen — die Dateien mussten diese Nacht wahrscheinlich
+nicht so stark gekürzt werden. Trotzdem NICHT davon ausgehen, dass ein
+extrem grosser Prompt (>100 KB) sicher funktioniert, das wurde nicht
+getestet. Bei diesem Fehler künftig: Update trotzdem als erfolgreich
+behandeln, ggf. mit `list_triggers` verifizieren statt zu wiederholen
+oder panisch zu kürzen.
 
 ## Phasenstatus
 
-- **Phase 0** (Vorbereitung): [x] GitHub-Repo (Push blockiert), [x] VPS
+- **Phase 0** (Vorbereitung): [x] GitHub-Repo + URL bekannt
+  (`github.com/raficello/zwt-probeplan-app`), Remote gesetzt, Push noch
+  blockiert (Repo-Autorisierung, siehe oben — Aktion bei Rafi), [x] VPS
   bestellt/aktiv (`83.228.213.202`, ubuntu, Ubuntu 26.04), [ ] Swiss
   Backup (Rafi), [ ] Domain (Rafi, Caddyfile hat IP-Übergangslösung),
   [x] Zugriffsmodell A entschieden (05.09.2026).
-- **Phase 1** (Datenmodell/Migration): war fertig gebaut+getestet
-  (`db/schema.sql` Abschnitt 10, `migrate/*` Abschnitt 11). **Code
-  verloren** — Neuaufbau aus Spezifikation risikoarm möglich. Offen:
+- **Phase 1** (Datenmodell/Migration): [x] Code wiederhergestellt
+  (`db/schema.sql`, `migrate/*`), 13 Tests grün. Offen:
   `raum_puffer`-Befüllung sobald echter Export vorliegt.
-- **Phase 2** (Server-Grundgerüst): war abgeschlossen bis auf Backup,
-  läuft unverändert auf VPS. **`deploy/*` im Repo verloren**, Inhalt lebt
-  auf VPS. Backup-Cronjob wartet auf Swiss Backup.
-- **Phase 3** (Terminverwaltung-API): war abgeschlossen, läuft produktiv:
-  CRUD `/api/termine`, Konfliktprüfung, Kzt-Regel, Wochentags-
-  Raumbeschränkung (nachgerüstet in Phase 8). **Code verloren.**
+- **Phase 2** (Server-Grundgerüst): [x] `deploy/*` wiederhergestellt,
+  läuft unverändert auf VPS. Backup-Cronjob wartet auf Swiss Backup.
+- **Phase 3** (Terminverwaltung-API): [x] Code wiederhergestellt
+  (`server/index.js`, `queries.js`, `validation.js`), läuft produktiv.
+  Enthält NICHT die Wochentags-Raumbeschränkung (`raumTagErlaubt()`) —
+  die kam erst in Phase 8, ist weiterhin verloren (siehe unten).
   Raumpuffer-Matrix weiterhin leer (Default 0 Min).
-- **Phase 4** (Raumplan/Musiker-Ansicht): war abgeschlossen, läuft
-  produktiv: vis-timeline, `raumplan.html`, `musikerplan.html`,
-  `color.js`. **Code verloren.** Bekannte Einschränkung: zeigt nur
-  Räume/Musiker mit Termin an dem Tag; `GET /api/musiker` fehlt.
-- **Phase 5** (Stand sperren): war abgeschlossen, läuft produktiv:
-  `GET/POST /api/stand*`, SQL-basierte Änderungsmarkierung. **Code
-  verloren.**
-- **Phase 6** (PDF-Export): war abgeschlossen, läuft produktiv:
-  Gesamtplan+Musikerplan-PDFs (`pdfkit`). **Code verloren.** QR/Dropbox
-  vermutlich unnötig.
-- **Phase 7** (Zugriff/Login): war abgeschlossen, läuft produktiv, von
-  Rafi bestätigt: Passwortschutz für Schreiben. **Code verloren.**
-- **Phase 8** (Parallelbetrieb/Testlauf): [ ] **admin.html fertig gebaut+
-  getestet (05.09.2026), aber weder deployed noch als ZIP verschickt —
-  DER Verlust dieser Nacht** (siehe Kritischer Befund). Spezifikation:
-  REFERENCE.md Abschnitt 15. [ ] Echter Testlauf mit realer Probenwoche
-  noch nicht begonnen.
+- **Phase 4** (Raumplan/Musiker-Ansicht): [x] Code wiederhergestellt
+  (`raumplan.html`, `musikerplan.html`, `musiker-logik.js`, `color.js`),
+  läuft produktiv. Bekannte Einschränkung: zeigt nur Räume/Musiker mit
+  Termin an dem Tag; `GET /api/musiker` fehlt weiterhin.
+- **Phase 5** (Stand sperren): [x] Code wiederhergestellt (in
+  `server/index.js`/`queries.js`), läuft produktiv.
+- **Phase 6** (PDF-Export): [x] Code wiederhergestellt (`pdf.js`,
+  `pdf-layout.js`), läuft produktiv. QR/Dropbox vermutlich unnötig.
+- **Phase 7** (Zugriff/Login): [x] Code wiederhergestellt (`auth.js`),
+  läuft produktiv, von Rafi bestätigt.
+- **Phase 8** (Parallelbetrieb/Testlauf): [ ] **admin.html + die zwei
+  Backend-Ergänzungen (raumTagErlaubt, GET /api/raeume) +
+  server/test/index.test.js sind weiterhin verloren** — nicht im
+  wiederhergestellten ZIP enthalten. Rafi gebeten, nach einem späteren
+  ZIP vom 05.09.-Abend zu suchen. Falls keins auftaucht: Neuaufbau in
+  Tagsitzung, Spezifikation REFERENCE.md Abschnitt 15 (überschaubarer
+  Umfang: 1 HTML-Formular-Seite + 2 kleine Backend-Ergänzungen + Tests).
+  [ ] Echter Testlauf mit realer Probenwoche noch nicht begonnen.
 - **Phase 9** (Umstieg): noch nicht begonnen.
 
 ## Offene Fragen / Annahmen
@@ -88,24 +105,21 @@ dann Phase 8 (Abschnitt 15).
 - Kein echter Sheet-Export vorhanden — Migration nutzt Beispieldaten.
 - Unbekannte Raumnamen im Export: Warnung + Auto-Raum statt Abbruch.
 - Backup-Ziel noch nicht bestellt.
-- `git push` schlägt mit 403 fehl (bekannter Cowork-Proxy-Bug,
-  github.com/anthropics/claude-code/issues/84581) — nicht mehrfach
-  debuggen. Bei leerem Verzeichnis zusätzlich kein `git remote`
-  konfiguriert, keine Repo-URL im Prompt — nicht raten. Rafi um
-  einmalige URL-Mitteilung gebeten (06.09.2026, noch keine Antwort).
+- `git push` schlägt mit 403 fehl — Stand 06.09.2026 konkret durch
+  fehlende Repo-Autorisierung für diese Session/dieses Konto (siehe
+  oben), nicht mehr durch einen generischen Proxy-Bug erklärt. Nach
+  Rafis Fix erneut versuchen, nicht mehrfach pro Sitzung.
 - Wichtig: Prompt-Einbettung schützt NUR die 3 Markdown-Dateien vor
-  leerer Sandbox, NICHT den Programmcode — der geht ohne zusätzliche
-  ZIP-/GitHub-Sicherung nachweislich komplett verloren (Kritischer
-  Befund oben).
-- update_trigger hat ein Grössenlimit für den `prompt`-Parameter (in
-  dieser Nacht empirisch ermittelt: ein ~52-KB-Gesamtprompt und auch
-  ein ~46-KB-Prompt wurden abgelehnt/"exceeds maximum allowed tokens").
-  Die 3 Dateien müssen daher zusammen deutlich unter ~20 KB bleiben, was
-  die Detailtiefe von REFERENCE.md/PROGRESS.md strukturell begrenzt.
-  Falls künftig mehr Detail nötig ist: eventuell in mehrere kleinere
-  Dateien aufteilen oder prüfen ob der Cap wirklich bei ~20-25 KB liegt
-  (bei "48 KB abgelehnt / 41 KB abgelehnt / ~20 KB versucht" noch nicht
-  abschliessend bestätigt, nur der letzte Versuch war erfolgreich).
+  leerer Sandbox, NICHT den Programmcode. ABER: Rafis eigene ZIP-Backups
+  (er hat mehrere vom 05.09.) sind ein funktionierender Rettungsweg,
+  siehe oben — bei Datenverlust IMMER zuerst fragen, ob ein aktuelles
+  ZIP vorliegt, bevor Neuaufbau aus Spezifikation versucht wird.
+- **Korrigiert 06.09.2026**: `update_trigger`s "exceeds maximum allowed
+  tokens"-Fehler bedeutet NICHT, dass das Update fehlschlug (siehe oben,
+  verifiziert per `list_triggers`) — nur die Bestätigungsantwort ist zu
+  gross zum Anzeigen. Diese Dateien mussten also wahrscheinlich nicht so
+  stark gekürzt werden wie in dieser Nacht geschehen; bei Bedarf künftig
+  wieder ausführlicher schreiben.
 
 ## Letzte Sicherung (ZIP an Nutzer per SendUserFile)
 - 03.09.2026, 04.09.2026; danach unregelmässig während Tagsitzungen.
