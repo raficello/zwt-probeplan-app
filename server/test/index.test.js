@@ -42,6 +42,21 @@ test.before(async () => {
     return;
   }
 
+  // Seit der Saison-Verwaltung (07.09.2026, siehe REFERENCE.md
+  // "Saison-Verwaltung") braucht JEDE Route eine aktive Saison -- ohne
+  // ?saison=<Jahr> im Request wird automatisch die aktive verwendet
+  // (resolveSaison in index.js). Diese Test-DB muss db/schema.sql,
+  // db/migration-werke.sql UND db/migration-saisons.sql bereits
+  // angewendet haben (wie bisher schon für die Basistabellen
+  // vorausgesetzt) -- hier wird nur EINE Test-Saison aktiviert, damit
+  // alle bestehenden fetch()-Aufrufe ohne den neuen Parameter
+  // weiterlaufen.
+  await pool.query('UPDATE saisons SET aktiv = false');
+  await pool.query(
+    `INSERT INTO saisons (jahr, bezeichnung, aktiv) VALUES (2091, 'Test-Saison', true)
+     ON CONFLICT (jahr) DO UPDATE SET aktiv = true`
+  );
+
   const app = require('../index');
   server = app.listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
@@ -59,10 +74,12 @@ test.after(async () => {
 async function frischerZustand() {
   await pool.query('TRUNCATE termine, termin_musiker, musiker, raeume, konfiguration RESTART IDENTITY CASCADE');
   const kursaal = await pool.query(
-    `INSERT INTO raeume (name, aud_code, erlaubte_tage) VALUES ('Kursaal', '802', NULL) RETURNING id`
+    `INSERT INTO raeume (name, aud_code, erlaubte_tage, saison_id)
+     VALUES ('Kursaal', '802', NULL, (SELECT id FROM saisons WHERE jahr = 2091)) RETURNING id`
   );
   const kgh = await pool.query(
-    `INSERT INTO raeume (name, aud_code, erlaubte_tage) VALUES ('Kirchgemeindehaus', '604', ARRAY['Mo','Mi','Fr']) RETURNING id`
+    `INSERT INTO raeume (name, aud_code, erlaubte_tage, saison_id)
+     VALUES ('Kirchgemeindehaus', '604', ARRAY['Mo','Mi','Fr'], (SELECT id FROM saisons WHERE jahr = 2091)) RETURNING id`
   );
   return { kursaalId: kursaal.rows[0].id, kghId: kgh.rows[0].id };
 }
@@ -223,4 +240,138 @@ test('Vollständiger CRUD-Durchlauf: anlegen, lesen, ändern, löschen', async (
 
   const nachLoeschen = await fetch(`${baseUrl}/api/termine?datum=2026-09-07`);
   assert.deepEqual((await nachLoeschen.json()).termine, []);
+});
+
+// Saison-Verwaltung (Rafi-Feedback, 07.09.2026, siehe REFERENCE.md
+// "Saison-Verwaltung"): eigene Test-Gruppe, damit die Archiv-Tests den
+// globalen "aktive Saison"-Zustand am Ende IMMER wieder auf die
+// Test-Saison 2091 zurücksetzen (frischerZustand() verlässt sich
+// darauf, dass 2091 aktiv ist).
+
+test('GET /api/saisons: listet Saisons, neueste zuerst', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  const res = await fetch(`${baseUrl}/api/saisons`);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  const testSaison = body.saisons.find((s) => s.jahr === 2091);
+  assert.ok(testSaison);
+  assert.equal(testSaison.aktiv, true);
+});
+
+test('POST /api/saisons: legt neue Saison an, NICHT automatisch aktiv', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  await pool.query('DELETE FROM saisons WHERE jahr = 2092');
+
+  const res = await fetch(`${baseUrl}/api/saisons`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify({ jahr: 2092, bezeichnung: 'ZwT 2092 (Test)' }),
+  });
+  assert.equal(res.status, 201);
+  const body = await res.json();
+  assert.equal(body.saison.jahr, 2092);
+  assert.equal(body.saison.aktiv, false);
+
+  // 2091 muss weiterhin die aktive Saison sein -- Anlegen einer neuen
+  // Saison darf die laufende NICHT einfrieren (siehe queries.js
+  // AKTIVIERE_SAISON_SQL-Kommentar).
+  const aktiveNoch = await pool.query('SELECT jahr FROM saisons WHERE aktiv = true');
+  assert.equal(aktiveNoch.rows[0].jahr, 2091);
+
+  await pool.query('DELETE FROM saisons WHERE jahr = 2092');
+});
+
+test('POST /api/saisons: doppeltes Jahr -> 400 statt 500', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  const res = await fetch(`${baseUrl}/api/saisons`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify({ jahr: 2091, bezeichnung: 'Doppelt' }),
+  });
+  assert.equal(res.status, 400);
+});
+
+test('POST /api/saisons: ohne Auth-Header -> 401', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  const res = await fetch(`${baseUrl}/api/saisons`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jahr: 2094, bezeichnung: 'Ohne Auth' }),
+  });
+  assert.equal(res.status, 401);
+});
+
+test('GET /api/termine: unbekanntes ?saison= -> 400', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  await frischerZustand();
+  const res = await fetch(`${baseUrl}/api/termine?saison=1234`);
+  assert.equal(res.status, 400);
+});
+
+test('Saison-Aktivierung + Archiv-Schreibsperre: archivierte Saison kann nicht mehr bearbeitet werden, aber weiterhin gelesen', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  const { kursaalId } = await frischerZustand();
+
+  // Termin in der (noch aktiven) Test-Saison 2091 anlegen.
+  const angelegt = await fetch(`${baseUrl}/api/termine`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify(terminBody({ raumId: kursaalId })),
+  });
+  assert.equal(angelegt.status, 201);
+  const { termin } = await angelegt.json();
+
+  // Zweite Saison anlegen und aktivieren -- 2091 wird dadurch automatisch
+  // zum Archiv (siehe AKTIVIERE_SAISON_SQL).
+  await pool.query('DELETE FROM saisons WHERE jahr = 2093');
+  await fetch(`${baseUrl}/api/saisons`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify({ jahr: 2093, bezeichnung: 'ZwT 2093 (Test)' }),
+  });
+  const aktivierung = await fetch(`${baseUrl}/api/saisons/2093/aktivieren`, {
+    method: 'POST',
+    headers: { Authorization: ORG_AUTH },
+  });
+  assert.equal(aktivierung.status, 200);
+
+  try {
+    // Lesen des alten Termins (explizit ?saison=2091) funktioniert weiterhin.
+    const gelesen = await fetch(`${baseUrl}/api/termine?saison=2091&datum=2026-09-07`);
+    assert.equal(gelesen.status, 200);
+    assert.equal((await gelesen.json()).termine.length, 1);
+
+    // Ändern/Löschen ist jetzt gesperrt (403), nicht mehr 200/204.
+    const geaendert = await fetch(`${baseUrl}/api/termine/${termin.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+      body: JSON.stringify(terminBody({ raumId: kursaalId, werk: 'Sollte scheitern' })),
+    });
+    assert.equal(geaendert.status, 403);
+
+    const geloescht = await fetch(`${baseUrl}/api/termine/${termin.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: ORG_AUTH },
+    });
+    assert.equal(geloescht.status, 403);
+
+    // Neuanlegen IN der archivierten Saison (explizit ?saison=2091) ist
+    // ebenfalls gesperrt.
+    const neuerVersuch = await fetch(`${baseUrl}/api/termine?saison=2091`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+      body: JSON.stringify(terminBody({ raumId: kursaalId })),
+    });
+    assert.equal(neuerVersuch.status, 403);
+  } finally {
+    // WICHTIG: globalen Zustand für alle nachfolgenden Tests zurücksetzen
+    // (frischerZustand() geht von 2091=aktiv aus).
+    // Zwei getrennte Anweisungen (nicht eine einzelne "SET aktiv =
+    // (jahr = 2091)") -- siehe Kommentar bei AKTIVIERE_SAISON_SQL in
+    // queries.js, dieselbe Falle wurde hier beim ersten Testlauf real
+    // ausgelöst (Unique-Index-Verletzung je nach Zeilen-Reihenfolge).
+    await pool.query('UPDATE saisons SET aktiv = false WHERE aktiv = true');
+    await pool.query('UPDATE saisons SET aktiv = true WHERE jahr = 2091');
+    await pool.query('DELETE FROM saisons WHERE jahr = 2093');
+  }
 });

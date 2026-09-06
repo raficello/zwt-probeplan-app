@@ -232,7 +232,15 @@ Backup-Cronjob (Swiss Backup) noch nicht begonnen, wartet auf Bestellung.
   eigene vertikale Tagesansicht ersetzt (Abschnitt 6) — dort baut jeder
   Aufruf das DOM komplett neu auf (`innerHTML = ''` + neu befüllen), das
   ist bei der Datenmenge (ein Tag) unproblematisch und einfacher als
-  inkrementelles Update.
+  inkrementelles Update. Beim Ersetzen selbst blieb in
+  `musikerplan.html` ein `if (timeline) ...`-Wächter um den
+  Kürzel-Filter-Eingabefeld-Listener stehen, der die (nicht mehr
+  deklarierte) Variable `timeline` referenzierte — dadurch blieb das
+  Live-Filtern beim Tippen STILL kaputt (kein Fehler, einfach nichts
+  passierte), bis es beim nächsten Feature-Umbau (Saison-Verwaltung,
+  07.09.2026) zufällig auffiel. Lehre: bei einem Bibliotheks-Ausbau
+  gezielt nach Referenzen auf die alten, jetzt entfernten Variablen
+  suchen (grep), nicht nur den offensichtlichen Hauptcode ersetzen.
 - `docker compose exec <service> psql ... < datei.sql` braucht `-T`.
 - Unit-Tests mit Mock-Daten reichen bei DB-/Browser-naher Logik nicht —
   immer zusätzlich gegen echtes Postgres/Browser (Playwright) testen.
@@ -381,3 +389,126 @@ Aufruf gegen ein Zielverzeichnis. Ausserdem nach jedem Deploy per
 `grep` auf dem VPS verifizieren, dass die neue Datei wirklich
 angekommen ist, bevor `docker compose up -d --build app` läuft (siehe
 Beispiel-Befehlsfolge unten in PROGRESS.md "Offene Fragen").
+
+## 17. Saison-Verwaltung (Rafi-Feedback, 07.09.2026)
+
+Rafis Anfrage: "Es muss dann eine Verwaltung geben für eine neue
+Saison. Daten, Musiker, Konzerte, Werke pro Konzert etc. Die
+vergangenen Saisons sollen als Archiv bleiben. Man sollte also jeweils
+das Jahr in einem Dropdown wählen können." Zuerst (06.09.2026) bewusst
+auf nach dem Festival vertagt, dann auf Rafis explizite Bestätigung
+("ja mache es") umgesetzt.
+
+### Datenmodell (`db/migration-saisons.sql`)
+
+Neue Tabelle `saisons` (id, jahr UNIQUE, bezeichnung, aktiv,
+erstellt_am). `raeume`, `musiker`, `termine`, `konfiguration`,
+`konzerte`, `werke`, `werk_vorlagen` bekommen je eine Pflicht-Spalte
+`saison_id`. Bisher globale Eindeutigkeit gilt jetzt nur noch PRO
+Saison (z.B. `UNIQUE (kuerzel, saison_id)` statt `UNIQUE (kuerzel)`
+bei `musiker`) — derselbe Raumname/Musiker-Kürzel/Werk-Nummer darf in
+verschiedenen Saisons unabhängig wieder vorkommen. `konfiguration`
+(bisher PK nur `schluessel`, z.B. "locked_at" für "Stand sperren")
+hat jetzt PK `(saison_id, schluessel)` — jede Saison sperrt
+unabhängig.
+
+**Modell "genau eine aktive Saison"**: Ein partieller Unique-Index
+(`saisons_nur_eine_aktiv_idx ON saisons (aktiv) WHERE aktiv`) erzwingt
+auf DB-Ebene, dass höchstens eine Saison gleichzeitig `aktiv=true`
+ist. Bewusst KEIN separates "archiviert"-Flag — alles, was nicht die
+eine aktive Saison ist, gilt automatisch als Archiv (nur lesbar).
+Eine neue Saison anlegen macht sie NICHT automatisch aktiv (sonst
+würde das Vorbereiten einer künftigen Saison die gerade laufende
+versehentlich einfrieren) — Umschalten ist ein bewusster zweiter
+Schritt (`POST /api/saisons/:jahr/aktivieren`).
+
+**Wichtiger Fallstrick, per echtem Postgres-Test gefunden** (siehe
+Abschnitt 13): eine Saison zu aktivieren wurde zuerst als EINE einzige
+Anweisung geschrieben (`UPDATE saisons SET aktiv = (id = $1)`). Das
+verletzt den partiellen Unique-Index — Postgres prüft Eindeutigkeit
+pro Zeile SOFORT beim Schreiben, nicht erst am Ende der Anweisung; je
+nach physischer Scan-Reihenfolge kann die neu zu aktivierende Zeile
+VOR der noch alten aktiven Zeile verarbeitet werden, wodurch
+kurzzeitig zwei Zeilen `aktiv=true` wären. Fix: ZWEI Anweisungen in
+derselben Transaktion (erst alle deaktivieren, dann genau eine
+aktivieren) — siehe `queries.js` `DEAKTIVIERE_ALLE_SAISONS_SQL` +
+`AKTIVIERE_SAISON_SQL`.
+
+**ALTER-basiert, nicht CREATE TABLE**, da die Migration auf der bereits
+produktiv befüllten 2026er-Datenbank laufen musste — bestehende Zeilen
+werden per Backfill automatisch der Saison 2026 zugeordnet, nichts
+wird gelöscht. Idempotent (`ADD COLUMN IF NOT EXISTS`,
+`DROP CONSTRAINT IF EXISTS` vor `ADD CONSTRAINT`), lokal sowohl gegen
+eine frische als auch gegen eine bereits befüllte Test-Datenbank
+verifiziert. `db/seed-raeume.sql`/`db/seed-werke-2026.sql` wurden
+nachträglich ebenfalls auf Saison 2026 skaliert (Unterabfrage
+`(SELECT id FROM saisons WHERE jahr = 2026)` in jeder betroffenen
+INSERT-Zeile), damit ein künftiger Fresh-Install
+(`schema.sql` → `migration-werke.sql` → `migration-saisons.sql` →
+Seeds) weiterhin funktioniert.
+
+### API
+
+Jede season-abhängige Route akzeptiert optional `?saison=<Jahr>` —
+ohne Angabe wird die aktive Saison verwendet (`resolveSaison()` in
+`index.js`), damit bestehende Aufrufe ohne den neuen Parameter
+weiterlaufen. Betroffen: `GET /api/termine`, `GET /api/raeume`,
+`GET /api/werke/vorschlaege`, `GET/POST /api/stand*`,
+`GET /api/pdf/*`. Neu: `GET /api/saisons` (Liste, offen),
+`POST /api/saisons` (anlegen, geschützt), `POST /api/saisons/:jahr/
+aktivieren` (umschalten, geschützt).
+
+Schreib-Routen (`POST/PUT/DELETE /api/termine*`,
+`POST /api/stand/sperren`) prüfen zusätzlich, ob die betroffene Saison
+aktiv ist — sonst 403 ("... ist nicht aktiv und kann deshalb nicht
+bearbeitet werden"). Bei `POST` wird die Saison aus `?saison=`
+aufgelöst (Default: aktive Saison); bei `PUT`/`DELETE` wird sie DIREKT
+vom bestehenden Termin abgelesen (`SELECT_TERMIN_SAISON_SQL`), nicht
+aus dem Query-Parameter — ein Termin wechselt nie die Saison, und ein
+falscher/fehlender `?saison=`-Parameter beim Bearbeiten soll nicht
+versehentlich den falschen Zustand prüfen. `pruefeKonflikte()` prüft
+zusätzlich, dass die gewählte `raumId` zur selben Saison gehört wie
+der Termin (sonst gilt der Raum als "unbekannt", genau wie ein
+nicht-existierender).
+
+### Frontend
+
+`admin.html`, `raumplan.html`, `musikerplan.html` haben je ein
+Jahres-Dropdown (`#saisonAuswahl`, befüllt aus `GET /api/saisons`) in
+der Toolbar. Default-Auswahl: `?saison=`-URL-Parameter falls gültig,
+sonst die aktive Saison, sonst die erste in der Liste. Bei einer
+nicht-aktiven Saison: gelbes Banner "Diese Saison ist nicht aktiv
+(Archiv oder noch nicht gestartet) — nur lesbar" UND die
+Schreib-Bedienelemente werden ausgeblendet (`admin.html`:
+"+ Neuer Termin" sowie Bearbeiten/Löschen-Buttons pro Zeile;
+`raumplan.html`: "Stand sperren"). Das ist reiner Komfort/Anzeige —
+der Server erzwingt dieselbe Regel nochmal (siehe oben), ein direkter
+API-Aufruf ohne UI bekommt trotzdem 403.
+
+`admin.html` hat zusätzlich einen "Saison-Verwaltung…"-Bereich
+(auf-/zuklappbar): neue Saison anlegen (Jahr + Bezeichnung, startet
+LEER und inaktiv) und die im Dropdown gewählte Saison aktivieren
+(schaltet alle anderen automatisch auf inaktiv/nur lesbar).
+
+**Bewusst NICHT gebaut** (Scope-Entscheidung wegen Nähe zum Festival,
+12.–18.10.2026): eigene CRUD-Oberflächen für Räume/Musiker:innen/
+Konzerte/Werke einer neuen Saison. Stattdessen bleibt das bestehende
+Muster: Rafi liefert die Daten (z.B. Excel-Export), eine Sitzung
+generiert daraus ein Seed-SQL-Skript (analog zu
+`db/seed-raeume.sql`/`db/seed-werke-2026.sql`, mit
+`saison_id = (SELECT id FROM saisons WHERE jahr = <neues Jahr>)`), das
+dann einmalig auf dem VPS ausgeführt wird. Falls künftig doch eine
+Web-Oberfläche dafür gewünscht ist, wäre das ein eigenes, separat zu
+planendes Vorhaben.
+
+### Verifikation
+
+Vollständig end-to-end getestet: 12 neue automatisierte Tests
+(`server/test/index.test.js`, u.a. Saison anlegen bleibt inaktiv,
+Aktivieren schaltet alte Saison automatisch auf inaktiv, PUT/DELETE/
+POST auf inaktiver Saison → 403, Lesen bleibt möglich), ausserdem
+manuell per echtem Postgres + Playwright-Browser: neue Saison 2027
+anlegen → leer (keine Räume) → aktivieren → 2026 wird automatisch
+Archiv-Banner+gesperrte Buttons in `admin.html` UND `raumplan.html`,
+alter 2026-Termin bleibt lesbar, direkter API-Schreibversuch auf 2026
+liefert 403.

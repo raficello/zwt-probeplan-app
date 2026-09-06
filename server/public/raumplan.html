@@ -36,11 +36,16 @@
   <h1>ZwT Probeplan — Raumplan</h1>
   <nav style="font-size:0.9rem;margin-bottom:0.5rem"><a href="/musikerplan.html">Zur Musiker-Ansicht</a> <a href="/admin.html">Zur Terminverwaltung</a></nav>
   <div class="toolbar">
+    <label for="saisonAuswahl" style="font-size:0.85rem;color:#555">Saison</label>
+    <select id="saisonAuswahl"></select>
     <button id="btnZurueck">&larr; Tag zurück</button>
     <select id="datum"></select>
     <button id="btnVor">Tag vor &rarr;</button>
     <button id="btnSperren">Stand sperren</button>
     <span id="standInfo" style="font-size:0.85rem;color:#555"></span>
+  </div>
+  <div id="archivBanner" style="background:#fff3b0;border:1px solid #d9b400;border-radius:4px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.9rem" hidden>
+    Diese Saison ist nicht aktiv (Archiv oder noch nicht gestartet) — nur lesbar, "Stand sperren" ist gesperrt.
   </div>
   <div id="status"></div>
   <div class="tagesraster">
@@ -66,9 +71,58 @@
     var statusEl = document.getElementById('status');
     var datumInput = document.getElementById('datum');
     var standInfoEl = document.getElementById('standInfo');
+    var saisonAuswahlEl = document.getElementById('saisonAuswahl');
+    var archivBannerEl = document.getElementById('archivBanner');
+    var btnSperrenEl = document.getElementById('btnSperren');
+
+    // Saison-Verwaltung (Rafi-Feedback 07.09.2026, siehe REFERENCE.md
+    // "Saison-Verwaltung") -- siehe admin.html für dasselbe Muster.
+    var saisonen = [];
+    var aktuelleSaison = null;
+
+    function fuelleSaisonAuswahl() {
+      saisonAuswahlEl.innerHTML = '';
+      saisonen.forEach(function (s) {
+        var opt = document.createElement('option');
+        opt.value = s.jahr;
+        opt.textContent = s.jahr + ' — ' + s.bezeichnung + (s.aktiv ? ' (aktiv)' : ' (nicht aktiv)');
+        saisonAuswahlEl.appendChild(opt);
+      });
+    }
+
+    function wendeArchivModusAn() {
+      var istArchiv = !aktuelleSaison.aktiv;
+      archivBannerEl.hidden = !istArchiv;
+      btnSperrenEl.hidden = istArchiv;
+    }
+
+    function saisonGewechselt() {
+      var jahr = Number(saisonAuswahlEl.value);
+      aktuelleSaison = saisonen.find(function (s) { return s.jahr === jahr; }) || aktuelleSaison;
+      wendeArchivModusAn();
+      zeigeStand();
+      ladeTag(datumInput.value);
+    }
+
+    function ladeSaisonen() {
+      return fetch('/api/saisons')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          saisonen = data.saisons;
+          fuelleSaisonAuswahl();
+          var urlParams = new URLSearchParams(window.location.search);
+          var gewuenschtesJahr = Number(urlParams.get('saison'));
+          aktuelleSaison =
+            saisonen.find(function (s) { return s.jahr === gewuenschtesJahr; }) ||
+            saisonen.find(function (s) { return s.aktiv; }) ||
+            saisonen[0];
+          if (aktuelleSaison) saisonAuswahlEl.value = aktuelleSaison.jahr;
+          wendeArchivModusAn();
+        });
+    }
 
     function zeigeStand() {
-      fetch('/api/stand')
+      fetch('/api/stand?saison=' + aktuelleSaison.jahr)
         .then(function (res) { return res.json(); })
         .then(function (data) {
           standInfoEl.textContent = data.lockedAt
@@ -220,7 +274,7 @@
 
     function ladeTag(datum) {
       statusEl.textContent = 'Lade...';
-      fetch('/api/termine?datum=' + encodeURIComponent(datum))
+      fetch('/api/termine?saison=' + aktuelleSaison.jahr + '&datum=' + encodeURIComponent(datum))
         .then(function (res) {
           if (!res.ok) throw new Error('HTTP ' + res.status);
           return res.json();
@@ -263,7 +317,7 @@
       if (!confirm('Aktuellen Stand sperren? Ab jetzt gelten alle bestehenden Termine als "nicht mehr neu", bis sie wieder geändert werden.')) {
         return;
       }
-      fetch('/api/stand/sperren', { method: 'POST', headers: { Authorization: organisatorAuthHeader() } })
+      fetch('/api/stand/sperren?saison=' + aktuelleSaison.jahr, { method: 'POST', headers: { Authorization: organisatorAuthHeader() } })
         .then(function (res) {
           if (res.status === 401) {
             organisatorPasswort = null; // falsches Passwort -> beim nächsten Versuch neu fragen
@@ -281,12 +335,16 @@
         });
     });
 
+    saisonAuswahlEl.addEventListener('change', saisonGewechselt);
+
     var urlParams = new URLSearchParams(window.location.search);
     var startDatum = urlParams.get('datum');
     fuelleDatumsAuswahl(datumInput);
     datumInput.value = FESTIVAL_TAGE.indexOf(startDatum) !== -1 ? startDatum : FESTIVAL_TAGE[0];
-    zeigeStand();
-    ladeTag(datumInput.value);
+    ladeSaisonen().then(function () {
+      zeigeStand();
+      ladeTag(datumInput.value);
+    });
   </script>
 </body>
 </html>

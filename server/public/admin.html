@@ -36,6 +36,11 @@
   #btnNeuerTermin { margin-bottom: 0.75rem; }
   #loginSperre { border: 1px solid #ccc; border-radius: 4px; padding: 1rem; max-width: 30rem; }
   #loginSperre button { font-size: 1rem; padding: 0.35rem 0.9rem; cursor: pointer; }
+  .saison-verwaltung { border: 1px solid #ccc; border-radius: 4px; padding: 1rem; margin-bottom: 0.75rem; max-width: 40rem; }
+  .saison-verwaltung h2 { font-size: 1rem; margin: 0 0 0.5rem 0; }
+  .saison-verwaltung-zeile { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+  .saison-verwaltung label { font-size: 0.85rem; }
+  .archiv-banner { background: #fff3b0; border: 1px solid #d9b400; border-radius: 4px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; font-size: 0.9rem; }
 </style>
 </head>
 <body>
@@ -55,6 +60,40 @@
   </div>
 
   <div id="hauptinhalt" hidden>
+    <!-- Saison-Verwaltung (Rafi-Feedback 07.09.2026, siehe REFERENCE.md
+         "Saison-Verwaltung"): Jahres-Dropdown wählt, mit welcher Saison
+         gearbeitet wird. Vergangene/nicht-aktive Saisons sind Archiv --
+         lesbar, aber nicht mehr bearbeitbar (Banner + gesperrte
+         Schreib-Buttons unten). -->
+    <div class="toolbar">
+      <label for="saisonAuswahl" style="font-size:0.85rem;color:#555">Saison</label>
+      <select id="saisonAuswahl"></select>
+      <button id="btnSaisonVerwaltung" type="button">Saison-Verwaltung…</button>
+    </div>
+
+    <div id="saisonVerwaltung" class="saison-verwaltung" hidden>
+      <h2>Saison-Verwaltung</h2>
+      <div class="saison-verwaltung-zeile">
+        <label>Jahr <input type="number" id="neueSaisonJahr" placeholder="z.B. 2027" style="width:6rem"></label>
+        <label>Bezeichnung <input type="text" id="neueSaisonBezeichnung" placeholder="z.B. ZwT 2027" style="width:14rem"></label>
+        <button id="btnSaisonAnlegen" type="button">Neue Saison anlegen</button>
+      </div>
+      <p style="font-size:0.85rem;color:#555">
+        Neue Saisons starten LEER (keine Räume/Musiker:innen/Konzerte/Werke) und sind zunächst NICHT aktiv
+        — die laufende Saison bleibt unangetastet, bis du unten bewusst umschaltest. Räume/Musiker:innen/
+        Konzerte/Werke für die neue Saison bitte wie bisher per SQL-Seed-Skript einspielen lassen
+        (sag einfach Bescheid, sobald die Daten für das neue Jahr da sind).
+      </p>
+      <div class="saison-verwaltung-zeile">
+        <button id="btnSaisonAktivieren" type="button">Ausgewählte Saison aktivieren (macht alle anderen inaktiv/nur lesbar)</button>
+      </div>
+      <button id="btnSaisonVerwaltungSchliessen" type="button">Schliessen</button>
+    </div>
+
+    <div id="archivBanner" class="archiv-banner" hidden>
+      Diese Saison ist nicht aktiv (Archiv oder noch nicht gestartet) — nur lesbar, Änderungen sind gesperrt.
+    </div>
+
     <div class="toolbar">
       <button id="btnZurueck">&larr; Tag zurück</button>
       <select id="datum"></select>
@@ -132,9 +171,21 @@
     var formEl = document.getElementById('terminForm');
     var tabelleBody = document.getElementById('tabelleBody');
     var formFehlerEl = document.getElementById('formFehler');
+    var saisonAuswahlEl = document.getElementById('saisonAuswahl');
+    var archivBannerEl = document.getElementById('archivBanner');
+    var btnNeuerTerminEl = document.getElementById('btnNeuerTermin');
 
     var raeume = []; // { id, name, audCode, erlaubteTage }
     var aktuelleTermine = [];
+
+    // Saison-Verwaltung (Rafi-Feedback 07.09.2026, siehe REFERENCE.md
+    // "Saison-Verwaltung"): `saisonen` = alle bekannten Saisons aus
+    // GET /api/saisons, `aktuelleSaison` = die gerade im Dropdown
+    // gewählte (nicht zwingend die aktive -- man kann Archive ansehen).
+    // Ist `aktuelleSaison.aktiv` falsch, sind Schreib-Aktionen gesperrt
+    // (Server erzwingt das ohnehin nochmal, siehe REFERENCE.md).
+    var saisonen = [];
+    var aktuelleSaison = null;
 
     var WOCHENTAG_NACH_JS_TAG = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']; // Date#getDay(): 0=So
 
@@ -209,7 +260,7 @@
     }
 
     function zeigeStand() {
-      fetch('/api/stand')
+      fetch('/api/stand?saison=' + aktuelleSaison.jahr)
         .then(function (res) { return res.json(); })
         .then(function (data) {
           standInfoEl.textContent = data.lockedAt
@@ -367,7 +418,7 @@
     var werkSucheTimer = null;
 
     function ladeWerkVorschlaege(suchtext) {
-      fetch('/api/werke/vorschlaege?q=' + encodeURIComponent(suchtext))
+      fetch('/api/werke/vorschlaege?saison=' + aktuelleSaison.jahr + '&q=' + encodeURIComponent(suchtext))
         .then(function (res) { return res.ok ? res.json() : { vorschlaege: [] }; })
         .then(function (data) {
           werkVorschlaegeNachName = {};
@@ -410,7 +461,7 @@
     }
 
     function ladeRaeume() {
-      return fetch('/api/raeume')
+      return fetch('/api/raeume?saison=' + aktuelleSaison.jahr)
         .then(function (res) {
           if (!res.ok) throw new Error('HTTP ' + res.status);
           return res.json();
@@ -418,6 +469,136 @@
         .then(function (data) {
           raeume = data.raeume;
           fuelleRaumAuswahl();
+        });
+    }
+
+    // ---- Saison-Verwaltung (Rafi-Feedback 07.09.2026) ----
+
+    function fuelleSaisonAuswahl() {
+      saisonAuswahlEl.innerHTML = '';
+      saisonen.forEach(function (s) {
+        var opt = document.createElement('option');
+        opt.value = s.jahr;
+        opt.textContent = s.jahr + ' — ' + s.bezeichnung + (s.aktiv ? ' (aktiv)' : ' (nicht aktiv)');
+        saisonAuswahlEl.appendChild(opt);
+      });
+    }
+
+    // Zeigt/versteckt den Archiv-Hinweis und sperrt/entsperrt die
+    // Schreib-Buttons je nachdem, ob die im Dropdown gewählte Saison
+    // gerade aktiv ist. Der Server erzwingt dieselbe Regel nochmal
+    // (siehe REFERENCE.md) -- das hier ist nur die Anzeige/Komfort-Seite.
+    function wendeArchivModusAn() {
+      var istArchiv = !aktuelleSaison.aktiv;
+      archivBannerEl.hidden = !istArchiv;
+      btnNeuerTerminEl.hidden = istArchiv;
+      zeichneTabelle();
+    }
+
+    function saisonGewechselt() {
+      var jahr = Number(saisonAuswahlEl.value);
+      aktuelleSaison = saisonen.find(function (s) { return s.jahr === jahr; }) || aktuelleSaison;
+      formularSchliessen();
+      wendeArchivModusAn();
+      fuelleDatumsAuswahl(datumInput);
+      fuelleDatumsAuswahl(document.getElementById('fDatum'));
+      setzeDatumsWert(datumInput, FESTIVAL_TAGE.indexOf(datumInput.value) !== -1 ? datumInput.value : FESTIVAL_TAGE[0]);
+      zeigeStand();
+      ladeRaeume().then(function () {
+        ladeTag(datumInput.value);
+      });
+    }
+
+    function ladeSaisonen() {
+      return fetch('/api/saisons')
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(function (data) {
+          saisonen = data.saisons;
+          fuelleSaisonAuswahl();
+          var urlParams = new URLSearchParams(window.location.search);
+          var gewuenschtesJahr = Number(urlParams.get('saison'));
+          aktuelleSaison =
+            saisonen.find(function (s) { return s.jahr === gewuenschtesJahr; }) ||
+            saisonen.find(function (s) { return s.aktiv; }) ||
+            saisonen[0];
+          if (aktuelleSaison) saisonAuswahlEl.value = aktuelleSaison.jahr;
+          wendeArchivModusAn();
+        });
+    }
+
+    function saisonVerwaltungOeffnen() {
+      document.getElementById('saisonVerwaltung').hidden = false;
+    }
+    function saisonVerwaltungSchliessen() {
+      document.getElementById('saisonVerwaltung').hidden = true;
+    }
+
+    function saisonAnlegen() {
+      var jahr = Number(document.getElementById('neueSaisonJahr').value);
+      var bezeichnung = document.getElementById('neueSaisonBezeichnung').value.trim();
+      if (!Number.isInteger(jahr) || jahr < 2000 || jahr > 2100) {
+        zeigeStatus('Bitte eine gültige Jahreszahl eingeben (2000–2100).', 'fehler');
+        return;
+      }
+      if (!bezeichnung) {
+        zeigeStatus('Bitte eine Bezeichnung für die neue Saison eingeben.', 'fehler');
+        return;
+      }
+      fetch('/api/saisons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: organisatorAuthHeader() },
+        body: JSON.stringify({ jahr: jahr, bezeichnung: bezeichnung }),
+      })
+        .then(function (res) {
+          if (res.status === 401) {
+            organisatorPasswort = null;
+            throw new Error('Falsches Passwort — bitte "Neue Saison anlegen" erneut klicken');
+          }
+          if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
+          return res.json();
+        })
+        .then(function () {
+          document.getElementById('neueSaisonJahr').value = '';
+          document.getElementById('neueSaisonBezeichnung').value = '';
+          zeigeStatus('Saison ' + jahr + ' angelegt (noch nicht aktiv).', 'erfolg');
+          return ladeSaisonen();
+        })
+        .catch(function (err) {
+          zeigeStatus(err.message, 'fehler');
+        });
+    }
+
+    function saisonAktivieren() {
+      var jahr = Number(saisonAuswahlEl.value);
+      if (!confirm('Saison ' + jahr + ' aktivieren? Alle anderen Saisons werden dadurch automatisch zu Archiv (nur noch lesbar).')) {
+        return;
+      }
+      fetch('/api/saisons/' + jahr + '/aktivieren', {
+        method: 'POST',
+        headers: { Authorization: organisatorAuthHeader() },
+      })
+        .then(function (res) {
+          if (res.status === 401) {
+            organisatorPasswort = null;
+            throw new Error('Falsches Passwort — bitte erneut versuchen');
+          }
+          if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
+        })
+        .then(function () {
+          zeigeStatus('Saison ' + jahr + ' ist jetzt aktiv.', 'erfolg');
+          return ladeSaisonen();
+        })
+        .then(function () {
+          return ladeRaeume();
+        })
+        .then(function () {
+          return ladeTag(datumInput.value);
+        })
+        .catch(function (err) {
+          zeigeStatus(err.message, 'fehler');
         });
     }
 
@@ -445,17 +626,22 @@
       var aktionenTd = document.createElement('td');
       aktionenTd.className = 'aktionen';
 
-      var btnBearbeiten = document.createElement('button');
-      btnBearbeiten.type = 'button';
-      btnBearbeiten.textContent = 'Bearbeiten';
-      btnBearbeiten.addEventListener('click', function () { formularZumBearbeitenOeffnen(t); });
-      aktionenTd.appendChild(btnBearbeiten);
+      // Archivierte (nicht aktive) Saison: keine Bearbeiten/Löschen-
+      // Buttons anzeigen, statt sie anzuzeigen und dann per 403 scheitern
+      // zu lassen (Server erzwingt die Sperre ohnehin nochmal).
+      if (aktuelleSaison && aktuelleSaison.aktiv) {
+        var btnBearbeiten = document.createElement('button');
+        btnBearbeiten.type = 'button';
+        btnBearbeiten.textContent = 'Bearbeiten';
+        btnBearbeiten.addEventListener('click', function () { formularZumBearbeitenOeffnen(t); });
+        aktionenTd.appendChild(btnBearbeiten);
 
-      var btnLoeschen = document.createElement('button');
-      btnLoeschen.type = 'button';
-      btnLoeschen.textContent = 'Löschen';
-      btnLoeschen.addEventListener('click', function () { terminLoeschen(t); });
-      aktionenTd.appendChild(btnLoeschen);
+        var btnLoeschen = document.createElement('button');
+        btnLoeschen.type = 'button';
+        btnLoeschen.textContent = 'Löschen';
+        btnLoeschen.addEventListener('click', function () { terminLoeschen(t); });
+        aktionenTd.appendChild(btnLoeschen);
+      }
 
       tr.appendChild(aktionenTd);
       return tr;
@@ -479,7 +665,7 @@
 
     function ladeTag(datum) {
       zeigeStatus('Lade...');
-      return fetch('/api/termine?datum=' + encodeURIComponent(datum))
+      return fetch('/api/termine?saison=' + aktuelleSaison.jahr + '&datum=' + encodeURIComponent(datum))
         .then(function (res) {
           if (!res.ok) throw new Error('HTTP ' + res.status);
           return res.json();
@@ -575,7 +761,11 @@
       var terminId = document.getElementById('terminId').value;
       var body = terminAusFormularLesen();
       var istNeu = !terminId;
-      var url = istNeu ? '/api/termine' : '/api/termine/' + terminId;
+      // Saison nur beim ANLEGEN nötig (?saison=<Jahr>) -- ein bestehender
+      // Termin (PUT) kennt seine Saison bereits über die eigene ID, der
+      // Server liest sie dort direkt vom Termin ab (siehe REFERENCE.md
+      // "Saison-Verwaltung").
+      var url = istNeu ? '/api/termine?saison=' + aktuelleSaison.jahr : '/api/termine/' + terminId;
       var methode = istNeu ? 'POST' : 'PUT';
 
       fetch(url, {
@@ -663,14 +853,23 @@
       document.getElementById('fTyp').addEventListener('change', aktualisiereTeilnehmerFeld);
       document.getElementById('fWerk').addEventListener('input', werkFeldGeaendert);
       formEl.addEventListener('submit', terminSpeichern);
+      saisonAuswahlEl.addEventListener('change', saisonGewechselt);
+      document.getElementById('btnSaisonVerwaltung').addEventListener('click', saisonVerwaltungOeffnen);
+      document.getElementById('btnSaisonVerwaltungSchliessen').addEventListener('click', saisonVerwaltungSchliessen);
+      document.getElementById('btnSaisonAnlegen').addEventListener('click', saisonAnlegen);
+      document.getElementById('btnSaisonAktivieren').addEventListener('click', saisonAktivieren);
 
       var urlParams = new URLSearchParams(window.location.search);
       var startDatum = urlParams.get('datum');
       fuelleDatumsAuswahl(datumInput);
       fuelleDatumsAuswahl(document.getElementById('fDatum'));
       setzeDatumsWert(datumInput, FESTIVAL_TAGE.indexOf(startDatum) !== -1 ? startDatum : FESTIVAL_TAGE[0]);
-      zeigeStand();
-      ladeRaeume().then(function () {
+      // Saisonen ZUERST laden (setzt aktuelleSaison) -- Räume/Termine/Stand
+      // hängen alle davon ab, welche Saison gerade gewählt ist.
+      ladeSaisonen().then(function () {
+        zeigeStand();
+        return ladeRaeume();
+      }).then(function () {
         ladeTag(datumInput.value);
       });
     }

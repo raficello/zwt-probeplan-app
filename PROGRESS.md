@@ -112,19 +112,20 @@ Downloads bei ihm nicht zuverlässig im normalen Downloads-Ordner landen
   Werk-Autocomplete + Teilnehmer-Vorschlag (Abschnitt 16,
   `db/migration-werke.sql` + `db/seed-werke-2026.sql`). **Alles oben
   von Rafi bestätigt (07.09.2026): "Funktioniert alles."**
-  [x] 07.09.2026, drittes Feedback-Paket, alle 3 lokal per echtem
-  Postgres+Playwright verifiziert, noch NICHT auf dem VPS ausgerollt:
-  Zeit-Feld akzeptiert jetzt auch "1230"/"930" ohne Doppelpunkt
-  (Abschnitt 15); admin.html fragt Passwort sofort beim Laden ab statt
-  erst beim Speichern (`GET /api/auth/pruefen`, Abschnitt 14);
-  Raumplan-/Musikerplan-Ansicht komplett auf eigene vertikale
-  Tagesansicht umgestellt (`tagesraster.js`, Abschnitt 6),
-  `vis-timeline`-Abhängigkeit entfernt (`package.json`/
-  `package-lock.json` geändert — Deploy muss deshalb `docker compose up
-  -d --build app` erneut laufen lassen, KEINE neue DB-Migration nötig).
-  [ ] Der eigentliche Parallelbetrieb/Testlauf mit einer realen
-  Probenwoche hat noch nicht begonnen — nächster Schritt, sobald das
-  dritte Feedback-Paket auf dem VPS bestätigt ist.
+  [x] 07.09.2026, drittes Feedback-Paket, **auf dem VPS ausgerollt und
+  von Rafi bestätigt** ("Funktioniert alles"): Zeit-Feld akzeptiert
+  jetzt auch "1230"/"930" ohne Doppelpunkt (Abschnitt 15); admin.html
+  fragt Passwort sofort beim Laden ab statt erst beim Speichern
+  (`GET /api/auth/pruefen`, Abschnitt 14); Raumplan-/Musikerplan-
+  Ansicht komplett auf eigene vertikale Tagesansicht umgestellt
+  (`tagesraster.js`, Abschnitt 6), `vis-timeline`-Abhängigkeit entfernt.
+  [x] 07.09.2026, Saison-Verwaltung (Abschnitt 17) — auf Rafis
+  Bestätigung ("ja mache es") umgesetzt, lokal vollständig per echtem
+  Postgres+Playwright verifiziert (12 neue Tests + manueller Workflow
+  neue-Saison-anlegen→aktivieren→alte-wird-Archiv), noch NICHT auf dem
+  VPS ausgerollt. [ ] Der eigentliche Parallelbetrieb/Testlauf mit
+  einer realen Probenwoche hat noch nicht begonnen — nächster Schritt,
+  sobald die Saison-Verwaltung auf dem VPS bestätigt ist.
 - **Phase 9** (Umstieg): noch nicht begonnen.
 
 ## Offene Fragen / Annahmen
@@ -208,22 +209,36 @@ Downloads bei ihm nicht zuverlässig im normalen Downloads-Ordner landen
   Danach im Browser Hard-Refresh (Cmd+Shift+R), damit kein alter
   admin.html-Cache-Stand angezeigt wird, und "401" im Werk-Feld
   ausprobieren. Noch nicht von Rafi bestätigt — nächster Schritt.
-- **Saison-Verwaltung angefragt, bewusst VERTAGT (06.09.2026)**: Rafi
-  will künftig mehrere Saisons verwalten können (Daten, Musiker,
-  Konzerte, Werke pro Saison; vergangene Saisons als Archiv, Jahr per
-  Dropdown wählbar). Das ist eine grosse, invasive Änderung (praktisch
-  jede Tabelle bräuchte eine `saison_id`, plus Migration der bereits
-  produktiv befüllten Daten, plus UI-Jahresauswahl auf allen 3 Seiten).
-  Rafis eigene Formulierung ("Es muss DANN eine Verwaltung geben")
-  deutet darauf hin, dass das für eine KÜNFTIGE Saison gilt, nicht für
-  das bevorstehende Festival Okt. 2026 — deshalb bewusst NICHT jetzt
-  kurz vor dem Festival umgesetzt (Risiko, die gerade lauffähige App zu
-  destabilisieren), sondern als eigenes Vorhaben nach dem Festival
-  vorgeschlagen, wenn mehr Zeit für einen sauberen Entwurf ist. Rafi
-  müsste das bestätigen — falls er es doch VOR dem Festival braucht,
-  sofort Bescheid geben. Die neuen Werk/Konzert-Tabellen (Abschnitt 16)
-  wurden bewusst ohne `saison_id` gebaut, um diese Entscheidung nicht
-  vorwegzunehmen.
+- **Saison-Verwaltung: UMGESETZT (07.09.2026)**. Zuerst (06.09.2026)
+  bewusst auf nach dem Festival vertagt (grosse, invasive Änderung so
+  kurz vor dem Festival), dann auf Rafis explizite Bestätigung ("ja
+  mache es") doch umgesetzt. Volle Doku: REFERENCE.md Abschnitt 17.
+  Kurzfassung: neue Tabelle `saisons`, alle Saison-abhängigen Tabellen
+  (`raeume`/`musiker`/`termine`/`konfiguration`/`konzerte`/`werke`/
+  `werk_vorlagen`) bekommen `saison_id` (`db/migration-saisons.sql`,
+  ALTER-basiert, bestehende 2026er-Daten per Backfill zugeordnet,
+  nichts gelöscht). Genau eine Saison ist "aktiv" (schreibbar), alle
+  anderen automatisch Archiv (nur lesbar) — DB-seitig per partiellem
+  Unique-Index erzwungen. Jahres-Dropdown auf allen 3 Seiten, neue
+  Saison anlegen + aktivieren über einen "Saison-Verwaltung…"-Bereich
+  in `admin.html`. Bewusst NICHT gebaut: eigene CRUD-Oberflächen für
+  Räume/Musiker/Konzerte/Werke einer neuen Saison — dafür bleibt das
+  bestehende Seed-Skript-Muster (Rafi liefert Daten, Sitzung generiert
+  SQL, einmalig ausführen). 12 neue automatisierte Tests +
+  manuelle Verifikation per echtem Postgres/Playwright (neue Saison
+  anlegen → aktivieren → alte Saison wird automatisch Archiv,
+  Schreibversuche dort geben 403, Lesen bleibt möglich). Dabei einen
+  echten Bug per Test gefunden+behoben: eine einzelne
+  "SET aktiv = (id = $1)"-Anweisung zum Umschalten verletzte je nach
+  Zeilen-Reihenfolge den Unique-Index — jetzt zwei Anweisungen in
+  einer Transaktion (siehe REFERENCE.md Abschnitt 17/13).
+  **Für den VPS-Deploy diesmal WICHTIG**: zusätzlich zu den Code-
+  Dateien muss `db/migration-saisons.sql` NACH `db/migration-werke.sql`
+  UND VOR `db/seed-raeume.sql`/`db/seed-werke-2026.sql` laufen (diese
+  beiden Seed-Skripte wurden ebenfalls angepasst und würden ohne die
+  Migration jetzt fehlschlagen, falls sie je erneut ausgeführt werden
+  — auf dem Produktiv-VPS sind sie aber schon gelaufen, müssen NICHT
+  wiederholt werden, nur die neue Migration).
 
 ## Letzte Sicherung (ZIP an Nutzer per SendUserFile)
 - 03.09.2026, 04.09.2026; danach unregelmässig während Tagsitzungen.

@@ -6,27 +6,33 @@
 -- Idempotent (ON CONFLICT ... DO UPDATE) — kann gefahrlos mehrfach
 -- angewendet werden, z.B. wenn sich die Config-Werte später ändern.
 --
+-- Seit der Saison-Verwaltung (07.09.2026, siehe REFERENCE.md
+-- "Saison-Verwaltung" und db/migration-saisons.sql) gehört jeder Raum zu
+-- genau einer Saison -- dieses Skript bestückt bewusst die Saison 2026
+-- (per Unterabfrage aufgelöst, kein hartkodiertes id). Muss NACH
+-- db/migration-saisons.sql laufen.
+--
 -- Anwenden auf dem VPS:
---   docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+--   docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
 --     < ../db/seed-raeume.sql
 -- (siehe REFERENCE.md Abschnitt 13: -T-Flag nötig, sonst TTY-Fehler)
 
 BEGIN;
 
-INSERT INTO raeume (name, erlaubte_tage) VALUES
-  ('Kursaal', ARRAY['Do','Fr','Sa','So']),
-  ('Kirchgemeindehaus', NULL),
-  ('Musiksaal', ARRAY['Mo','Di','Mi']),
-  ('Pilatesraum', NULL),
-  ('Sonnwendhof', NULL),
-  ('Hotel Hahnenblick', NULL),
-  ('Carol', NULL),
-  ('Elisabeth Brun, Mühlematt 33', NULL),
-  ('Garderobe', NULL),
-  ('Schweizerhof', NULL),
-  ('Kloster Barocksaal', NULL),
-  ('Alpenclub', NULL)
-ON CONFLICT (name) DO UPDATE SET erlaubte_tage = EXCLUDED.erlaubte_tage;
+INSERT INTO raeume (name, erlaubte_tage, saison_id) VALUES
+  ('Kursaal', ARRAY['Do','Fr','Sa','So'], (SELECT id FROM saisons WHERE jahr = 2026)),
+  ('Kirchgemeindehaus', NULL, (SELECT id FROM saisons WHERE jahr = 2026)),
+  ('Musiksaal', ARRAY['Mo','Di','Mi'], (SELECT id FROM saisons WHERE jahr = 2026)),
+  ('Pilatesraum', NULL, (SELECT id FROM saisons WHERE jahr = 2026)),
+  ('Sonnwendhof', NULL, (SELECT id FROM saisons WHERE jahr = 2026)),
+  ('Hotel Hahnenblick', NULL, (SELECT id FROM saisons WHERE jahr = 2026)),
+  ('Carol', NULL, (SELECT id FROM saisons WHERE jahr = 2026)),
+  ('Elisabeth Brun, Mühlematt 33', NULL, (SELECT id FROM saisons WHERE jahr = 2026)),
+  ('Garderobe', NULL, (SELECT id FROM saisons WHERE jahr = 2026)),
+  ('Schweizerhof', NULL, (SELECT id FROM saisons WHERE jahr = 2026)),
+  ('Kloster Barocksaal', NULL, (SELECT id FROM saisons WHERE jahr = 2026)),
+  ('Alpenclub', NULL, (SELECT id FROM saisons WHERE jahr = 2026))
+ON CONFLICT (name, saison_id) DO UPDATE SET erlaubte_tage = EXCLUDED.erlaubte_tage;
 
 -- Pufferzeiten-Matrix (Minuten). Symmetrisch in den Quelldaten, daher
 -- beide Richtungen eingetragen; Diagonale (derselbe Raum) ist 0 in den
@@ -55,8 +61,8 @@ WITH matrix(von_name, bis_name, minuten) AS (
 INSERT INTO raum_puffer (von_raum_id, bis_raum_id, puffer_minuten)
 SELECT von.id, bis.id, m.minuten
 FROM matrix m
-JOIN raeume von ON von.name = m.von_name
-JOIN raeume bis ON bis.name = m.bis_name
+JOIN raeume von ON von.name = m.von_name AND von.saison_id = (SELECT id FROM saisons WHERE jahr = 2026)
+JOIN raeume bis ON bis.name = m.bis_name AND bis.saison_id = (SELECT id FROM saisons WHERE jahr = 2026)
 ON CONFLICT (von_raum_id, bis_raum_id) DO UPDATE SET puffer_minuten = EXCLUDED.puffer_minuten;
 
 COMMIT;

@@ -37,11 +37,16 @@
   <h1>ZwT Probeplan — Musikerplan</h1>
   <nav><a href="/raumplan.html">Zur Raumplan-Ansicht</a> <a href="/admin.html">Zur Terminverwaltung</a></nav>
   <div class="toolbar">
+    <label for="saisonAuswahl">Saison</label>
+    <select id="saisonAuswahl"></select>
     <button id="btnZurueck">&larr; Tag zurück</button>
     <select id="datum"></select>
     <button id="btnVor">Tag vor &rarr;</button>
     <label for="kuerzel">Musiker-Kürzel (leer = alle, die an diesem Tag einen Termin haben):</label>
     <input type="text" id="kuerzel" placeholder="z.B. AB, CD">
+  </div>
+  <div id="archivBanner" style="background:#fff3b0;border:1px solid #d9b400;border-radius:4px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.9rem" hidden>
+    Diese Saison ist nicht aktiv (Archiv oder noch nicht gestartet) — nur lesbar.
   </div>
   <div id="status"></div>
   <div class="tagesraster">
@@ -69,6 +74,51 @@
     var datumInput = document.getElementById('datum');
     var kuerzelInput = document.getElementById('kuerzel');
     var letzteTermine = [];
+    var saisonAuswahlEl = document.getElementById('saisonAuswahl');
+    var archivBannerEl = document.getElementById('archivBanner');
+
+    // Saison-Verwaltung (Rafi-Feedback 07.09.2026, siehe REFERENCE.md
+    // "Saison-Verwaltung") -- siehe admin.html für dasselbe Muster.
+    var saisonen = [];
+    var aktuelleSaison = null;
+
+    function fuelleSaisonAuswahl() {
+      saisonAuswahlEl.innerHTML = '';
+      saisonen.forEach(function (s) {
+        var opt = document.createElement('option');
+        opt.value = s.jahr;
+        opt.textContent = s.jahr + ' — ' + s.bezeichnung + (s.aktiv ? ' (aktiv)' : ' (nicht aktiv)');
+        saisonAuswahlEl.appendChild(opt);
+      });
+    }
+
+    function wendeArchivModusAn() {
+      archivBannerEl.hidden = aktuelleSaison.aktiv;
+    }
+
+    function saisonGewechselt() {
+      var jahr = Number(saisonAuswahlEl.value);
+      aktuelleSaison = saisonen.find(function (s) { return s.jahr === jahr; }) || aktuelleSaison;
+      wendeArchivModusAn();
+      ladeTag(datumInput.value);
+    }
+
+    function ladeSaisonen() {
+      return fetch('/api/saisons')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          saisonen = data.saisons;
+          fuelleSaisonAuswahl();
+          var urlParams = new URLSearchParams(window.location.search);
+          var gewuenschtesJahr = Number(urlParams.get('saison'));
+          aktuelleSaison =
+            saisonen.find(function (s) { return s.jahr === gewuenschtesJahr; }) ||
+            saisonen.find(function (s) { return s.aktiv; }) ||
+            saisonen[0];
+          if (aktuelleSaison) saisonAuswahlEl.value = aktuelleSaison.jahr;
+          wendeArchivModusAn();
+        });
+    }
 
     // Festival-Tage 2026 (Rafi-Feedback, 06.09.2026: Datumsauswahl überall
     // als Liste der tatsächlichen Tage statt freies Datumsfeld/freie
@@ -190,7 +240,7 @@
 
     function ladeTag(datum) {
       statusEl.textContent = 'Lade...';
-      fetch('/api/termine?datum=' + encodeURIComponent(datum))
+      fetch('/api/termine?saison=' + aktuelleSaison.jahr + '&datum=' + encodeURIComponent(datum))
         .then(function (res) {
           if (!res.ok) throw new Error('HTTP ' + res.status);
           return res.json();
@@ -213,16 +263,26 @@
     datumInput.addEventListener('change', function () {
       ladeTag(datumInput.value);
     });
+    // War vorher an "if (timeline) ..." geknüpft -- ein Überbleibsel aus
+    // der vis-timeline-Zeit, das seit deren Ablösung durch die eigene
+    // vertikale Tagesansicht (07.09.2026) `timeline` (nicht mehr
+    // deklariert) referenzierte und die Kürzel-Live-Filterung dadurch
+    // STILL kaputt gemacht hatte (Bug, hier beim Saison-Umbau gefunden
+    // und mitbehoben) -- zeichneTagesraster() baut ohnehin bei jedem
+    // Aufruf komplett neu auf, eine Existenzprüfung ist nicht mehr nötig.
     kuerzelInput.addEventListener('input', function () {
-      if (timeline) aktualisiereAnzeige(datumInput.value);
+      aktualisiereAnzeige(datumInput.value);
     });
+    saisonAuswahlEl.addEventListener('change', saisonGewechselt);
 
     var urlParams = new URLSearchParams(window.location.search);
     var startDatum = urlParams.get('datum');
     fuelleDatumsAuswahl(datumInput);
     datumInput.value = FESTIVAL_TAGE.indexOf(startDatum) !== -1 ? startDatum : FESTIVAL_TAGE[0];
     if (urlParams.get('kuerzel')) kuerzelInput.value = urlParams.get('kuerzel');
-    ladeTag(datumInput.value);
+    ladeSaisonen().then(function () {
+      ladeTag(datumInput.value);
+    });
   </script>
 </body>
 </html>
