@@ -306,3 +306,22 @@ end-to-end getestet (echtes Postgres, echter Server, echter
 Playwright-Browser: Eingabe "401" → Teilnehmer-Feld füllt sich mit
 "DU YL"). Bewusst OHNE Saison-Bezug — siehe PROGRESS.md "Offene
 Fragen" zur separat angefragten, aber vertagten Saison-Verwaltung.
+
+### Deploy-Fallstrick (07.09.2026): mehrere Dateien in einem scp-Befehl
+
+Rafi meldete, dass das Werk-Autocomplete nach Befolgen der Deploy-
+Anleitung nicht sichtbar war. Vermutliche Ursache: eine frühere
+Anleitung bündelte `server/index.js`, `server/queries.js` UND
+`server/public/admin.html` in einem einzigen
+`scp datei1 datei2 datei3 ziel/`-Befehl. Ein flacher scp-Mehrfach-
+Befehl erhält die Unterordnerstruktur NICHT — `admin.html` landet dabei
+direkt in `server/` statt in `server/public/`, das alte `admin.html`
+bleibt unverändert liegen (Docker-Build kopiert weiterhin die alte
+Version), während index.js/queries.js korrekt aktualisiert werden.
+
+**Regel ab jetzt: JEDE Datei einzeln kopieren, mit explizitem
+Zielpfad inkl. Dateiname**, nie mehrere Quelldateien in einem scp-
+Aufruf gegen ein Zielverzeichnis. Ausserdem nach jedem Deploy per
+`grep` auf dem VPS verifizieren, dass die neue Datei wirklich
+angekommen ist, bevor `docker compose up -d --build app` läuft (siehe
+Beispiel-Befehlsfolge unten in PROGRESS.md "Offene Fragen").

@@ -141,6 +141,43 @@ Downloads bei ihm nicht zuverlässig im normalen Downloads-Ordner landen
   importiert — falls das gebraucht wird, müsste `werke.nummer` von
   `int` auf `text` geändert werden (kleiner Nacharbeitsposten, kein
   Blocker).
+- **Werk-Autocomplete auf VPS noch nicht sichtbar (07.09.2026)**: Rafi
+  meldet, dass das Feature nach der Deploy-Anleitung nicht funktioniert.
+  Diagnose (Details REFERENCE.md, neuer Abschnitt am Ende von 16):
+  vermutlich hat ein scp-Befehl mit mehreren Quelldateien in einem
+  Aufruf die Unterordnerstruktur nicht erhalten, wodurch `admin.html`
+  nicht in `server/public/` gelandet ist und die alte Version aktiv
+  blieb. Diese Sandbox hat KEINEN SSH-Zugriff auf den VPS (kein Key
+  hinterlegt) — die Prüfung/der Fix muss von Rafis Rechner aus laufen.
+  Korrigierte, selbst-verifizierende Befehlsfolge (jede Datei EINZELN
+  kopieren, Zielpfad inkl. Dateiname):
+  ```
+  cd "/Users/rafi/Library/CloudStorage/Dropbox/Apps/ZWT Claude Schedule"
+
+  scp server/index.js ubuntu@83.228.213.202:~/zwt-probeplan-app/server/index.js
+  scp server/queries.js ubuntu@83.228.213.202:~/zwt-probeplan-app/server/queries.js
+  scp server/public/admin.html ubuntu@83.228.213.202:~/zwt-probeplan-app/server/public/admin.html
+  scp db/migration-werke.sql ubuntu@83.228.213.202:~/zwt-probeplan-app/db/migration-werke.sql
+  scp db/seed-werke-2026.sql ubuntu@83.228.213.202:~/zwt-probeplan-app/db/seed-werke-2026.sql
+
+  ssh ubuntu@83.228.213.202
+  cd ~/zwt-probeplan-app
+
+  # Verifikation 1: Zahl > 0 bedeutet, die neue admin.html ist wirklich angekommen
+  grep -c "werkVorschlaege" server/public/admin.html
+
+  cd deploy
+  docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < ../db/migration-werke.sql
+  docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < ../db/seed-werke-2026.sql
+  docker compose up -d --build app
+
+  # Verifikation 2: sollte "Mozart Duo B-Dur" und teilnehmer ["DU","YL"] zeigen
+  sleep 5
+  docker compose exec app node -e "require('http').get('http://localhost:3000/api/werke/vorschlaege?q=401', r => { let d=''; r.on('data', c => d+=c); r.on('end', () => console.log(d)); })"
+  ```
+  Danach im Browser Hard-Refresh (Cmd+Shift+R), damit kein alter
+  admin.html-Cache-Stand angezeigt wird, und "401" im Werk-Feld
+  ausprobieren. Noch nicht von Rafi bestätigt — nächster Schritt.
 - **Saison-Verwaltung angefragt, bewusst VERTAGT (06.09.2026)**: Rafi
   will künftig mehrere Saisons verwalten können (Daten, Musiker,
   Konzerte, Werke pro Saison; vergangene Saisons als Archiv, Jahr per
