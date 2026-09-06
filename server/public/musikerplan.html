@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8">
 <title>ZwT Probeplan — Musikerplan</title>
-<link rel="stylesheet" href="/vendor/vis-timeline/dist/vis-timeline-graph2d.min.css">
 <style>
   body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; }
   h1 { font-size: 1.1rem; margin: 0 0 0.75rem 0; }
@@ -14,7 +13,22 @@
   .toolbar input[type="text"] { font-size: 1rem; padding: 0.25rem; width: 16rem; }
   .toolbar label { font-size: 0.85rem; color: #555; }
   #status { color: #900; margin-bottom: 0.5rem; }
-  #timeline { border: 1px solid #ccc; }
+  /* Vertikale Tagesansicht (Rafi-Feedback, 07.09.2026), siehe
+     raumplan.html für dasselbe Muster/dieselben Kommentare. */
+  .tagesraster { border: 1px solid #ccc; overflow-x: auto; }
+  .tagesraster-kopf, .tagesraster-koerper { display: grid; }
+  .tagesraster-kopf > div {
+    padding: 0.35rem 0.5rem; font-weight: bold; font-size: 0.85rem;
+    border-right: 1px solid #ccc; border-bottom: 1px solid #ccc; background: #f0f0f0;
+    position: sticky; top: 0; z-index: 2;
+  }
+  .tagesraster-zeitspalte, .tagesraster-spalte { position: relative; border-right: 1px solid #eee; }
+  .tagesraster-stunde-linie { position: absolute; left: 0; right: 0; border-top: 1px solid #eee; }
+  .tagesraster-stunde-label { position: absolute; left: 0.25rem; font-size: 0.7rem; color: #555; }
+  .tagesraster-termin {
+    position: absolute; left: 2px; right: 2px; border: 1px solid #888; border-radius: 3px;
+    font-size: 0.75rem; line-height: 1.2; padding: 0.15rem 0.3rem; overflow: hidden; box-sizing: border-box;
+  }
   .legende { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; font-size: 0.85rem; }
   .legende span.kaestchen { display: inline-block; width: 0.9em; height: 0.9em; border: 1px solid #999; vertical-align: middle; margin-right: 0.3em; }
 </style>
@@ -30,7 +44,10 @@
     <input type="text" id="kuerzel" placeholder="z.B. AB, CD">
   </div>
   <div id="status"></div>
-  <div id="timeline"></div>
+  <div class="tagesraster">
+    <div id="tagesrasterKopf" class="tagesraster-kopf"></div>
+    <div id="tagesrasterKoerper" class="tagesraster-koerper"></div>
+  </div>
   <div class="legende">
     <span><span class="kaestchen" style="background:#ffd9a0"></span>Neu/geändert seit letztem Sperren</span>
     <span><span class="kaestchen" style="background:#b6f2b6"></span>Kzt (Konzertblock — erscheint bei allen)</span>
@@ -40,12 +57,14 @@
     <span><span class="kaestchen" style="background:#ffffff"></span>Normale Probe</span>
   </div>
 
-  <script src="/vendor/vis-timeline/standalone/umd/vis-timeline-graph2d.min.js"></script>
   <script src="/color.js"></script>
   <script src="/musiker-logik.js"></script>
+  <script src="/tagesraster.js"></script>
   <script>
-    var container = document.getElementById('timeline');
-    var timeline = null;
+    var kopfEl = document.getElementById('tagesrasterKopf');
+    var koerperEl = document.getElementById('tagesrasterKoerper');
+    var PX_PRO_MINUTE = 1.2;
+    var MINDESTHOEHE_PX = 16;
     var statusEl = document.getElementById('status');
     var datumInput = document.getElementById('datum');
     var kuerzelInput = document.getElementById('kuerzel');
@@ -93,32 +112,80 @@
         .filter(Boolean);
     }
 
+    // Baut die vertikale Tagesansicht komplett neu auf -- siehe
+    // raumplan.html für dasselbe Muster/dieselben Kommentare zu
+    // tagesraster.js.
+    function zeichneTagesraster(groups, items, datum) {
+      var fenster = ermittleFenster(datum, items, '07:00:00', '23:00:00');
+      var gesamtHoehe = berechnePosition(fenster.ende, fenster.ende, fenster.start, PX_PRO_MINUTE, 0).top;
+      var spaltenTemplate = '4rem repeat(' + Math.max(groups.length, 1) + ', minmax(9rem, 1fr))';
+      var stunden = stundenraster(fenster.start, fenster.ende);
+
+      kopfEl.innerHTML = '';
+      kopfEl.style.gridTemplateColumns = spaltenTemplate;
+      kopfEl.appendChild(document.createElement('div'));
+      groups.forEach(function (g) {
+        var div = document.createElement('div');
+        div.textContent = g.content;
+        kopfEl.appendChild(div);
+      });
+
+      koerperEl.innerHTML = '';
+      koerperEl.style.gridTemplateColumns = spaltenTemplate;
+
+      var zeitspalte = document.createElement('div');
+      zeitspalte.className = 'tagesraster-zeitspalte';
+      zeitspalte.style.height = gesamtHoehe + 'px';
+      stunden.forEach(function (stundeIso) {
+        var top = berechnePosition(stundeIso, stundeIso, fenster.start, PX_PRO_MINUTE, 0).top;
+        var label = document.createElement('div');
+        label.className = 'tagesraster-stunde-label';
+        label.style.top = top + 'px';
+        label.textContent = new Date(stundeIso).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+        zeitspalte.appendChild(label);
+      });
+      koerperEl.appendChild(zeitspalte);
+
+      groups.forEach(function (g) {
+        var spalte = document.createElement('div');
+        spalte.className = 'tagesraster-spalte';
+        spalte.style.height = gesamtHoehe + 'px';
+
+        stunden.forEach(function (stundeIso) {
+          var top = berechnePosition(stundeIso, stundeIso, fenster.start, PX_PRO_MINUTE, 0).top;
+          var linie = document.createElement('div');
+          linie.className = 'tagesraster-stunde-linie';
+          linie.style.top = top + 'px';
+          spalte.appendChild(linie);
+        });
+
+        items
+          .filter(function (it) { return it.group === g.id; })
+          .forEach(function (it) {
+            var pos = berechnePosition(it.start, it.end, fenster.start, PX_PRO_MINUTE, MINDESTHOEHE_PX);
+            var block = document.createElement('div');
+            block.className = 'tagesraster-termin';
+            block.style.top = pos.top + 'px';
+            block.style.height = pos.hoehe + 'px';
+            block.style.cssText += ';' + it.style;
+            block.textContent = it.content;
+            block.title = it.content;
+            spalte.appendChild(block);
+          });
+
+        koerperEl.appendChild(spalte);
+      });
+    }
+
     function aktualisiereAnzeige(datum) {
       var musikerListe = gewuenschteKuerzel(letzteTermine);
       var built = baueMusikerGroupsUndItems(letzteTermine, musikerListe, datum, terminFarbe);
 
-      if (musikerListe.length === 0) {
-        statusEl.textContent = 'Keine Musiker:innen an diesem Tag (oder Kürzel-Filter ergibt keine Treffer).';
-      } else {
-        statusEl.textContent = '';
-      }
+      statusEl.textContent = musikerListe.length === 0
+        ? 'Keine Musiker:innen an diesem Tag (oder Kürzel-Filter ergibt keine Treffer).'
+        : '';
 
-      if (!timeline) {
-        timeline = new vis.Timeline(container, built.items, built.groups, {
-          min: datum + 'T00:00:00',
-          max: datum + 'T23:59:59',
-          stack: true,
-          orientation: 'top',
-        });
-      } else {
-        // Siehe raumplan.html: destroy()+Neuaufbau vermeiden (führte dort
-        // zu einem Rendering-Bug), stattdessen bestehende Instanz
-        // aktualisieren.
-        timeline.setOptions({ min: datum + 'T00:00:00', max: datum + 'T23:59:59' });
-        timeline.setGroups(built.groups);
-        timeline.setItems(built.items);
-      }
-      timeline.setWindow(datum + 'T07:00:00', datum + 'T23:00:00');
+      zeichneTagesraster(built.groups, built.items, datum);
     }
 
     function ladeTag(datum) {

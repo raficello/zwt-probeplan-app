@@ -77,9 +77,36 @@ Schlüsselvergleich wie im alten Sheet nötig.
 ## 6. Ansichten & Farben
 
 Raumplan-Ansicht (Räume=Spalten) und Musiker-Ansicht (gewählte
-Musiker:innen=Spalten, je alle eigenen Termine + alle `Kzt`). Echte
-Timeline-Bibliothek (nicht festes Zeitraster) nötig, sonst können kurze
-Termine bei unabhängigem Runden von Start/Ende verschwinden.
+Musiker:innen=Spalten, je alle eigenen Termine + alle `Kzt`).
+
+**Vertikale Tagesansicht (Rafi-Feedback, 07.09.2026)**: `raumplan.html`
+und `musikerplan.html` zeigen die Termine als eigenes, selbstgebautes
+Zeitraster — Zeit läuft von oben nach unten, Räume/Musiker:innen sind
+Spalten — analog zu den Tabs "Raumplan Grafik"/"Musiker Grafik" im
+Original-Google-Sheet. Ersetzt die bisherige `vis-timeline`-Bibliothek
+(horizontale Zeitachse, Gruppen als Zeilen), die dafür kein passendes
+Layout bot; Abhängigkeit `vis-timeline` deshalb aus `package.json`
+entfernt (`npm install` neu ausgeführt, `package-lock.json` aktualisiert
+— beim nächsten Deploy zieht `docker compose up -d --build app` das
+automatisch nach).
+
+Aufbau: `server/public/tagesraster.js` enthält NUR reine, in Node
+testbare Positions-/Zeitfenster-Mathematik (`berechnePosition`,
+`ermittleFenster`, `stundenraster` — Tests in
+`server/test/tagesraster.test.js`); das eigentliche DOM-Rendering steht
+direkt in `raumplan.html`/`musikerplan.html` (bewusst dupliziert, siehe
+PROGRESS.md "Offene Fragen" zur bestehenden Duplizierung kurzer
+Bau-Logik zwischen den beiden Ansichten). Die bestehenden
+Gruppen/Items-Bau-Funktionen (`baueGroupsUndItems` in raumplan.html,
+`baueMusikerGroupsUndItems` in musiker-logik.js) blieben unverändert —
+sie liefern weiterhin `{id, content}`-Gruppen und
+`{group, content, start, end, style}`-Items, nur die Rendering-Schicht
+wurde ausgetauscht. Sichtfenster ist mindestens 07:00–23:00 Uhr, wird
+aber automatisch erweitert, falls ein Termin ausserhalb liegt (siehe
+`ermittleFenster`), damit nichts abgeschnitten wird. `PX_PRO_MINUTE`
+(aktuell 1.2) und `MINDESTHOEHE_PX` (16px, gegen unlesbar schmale
+Kurz-Termine) sind in jeder der beiden HTML-Dateien oben als Konstante
+gesetzt.
 
 Farben nach Typ: `Kzt`=Grün `#b6f2b6`, `K`=Hellgrün `#d7f2d7`, Werk beginnt
 "GP"=Gelb `#fff3b0`, Bemerkungen/Werk enthält aufbau/apero/logistik/
@@ -201,6 +228,11 @@ Backup-Cronjob (Swiss Backup) noch nicht begonnen, wartet auf Bestellung.
   Zeit-Parsing muss das akzeptieren, sonst stille Fehlvergleiche.
 - vis-timeline: bei Datenwechsel `setGroups()`/`setItems()`/`setWindow()`
   nutzen, NICHT `destroy()`+neu erzeugen (sonst dauerhaft `hidden`).
+  **Seit 07.09.2026 nicht mehr relevant**: vis-timeline wurde durch die
+  eigene vertikale Tagesansicht ersetzt (Abschnitt 6) — dort baut jeder
+  Aufruf das DOM komplett neu auf (`innerHTML = ''` + neu befüllen), das
+  ist bei der Datenmenge (ein Tag) unproblematisch und einfacher als
+  inkrementelles Update.
 - `docker compose exec <service> psql ... < datei.sql` braucht `-T`.
 - Unit-Tests mit Mock-Daten reichen bei DB-/Browser-naher Logik nicht —
   immer zusätzlich gegen echtes Postgres/Browser (Playwright) testen.
@@ -247,6 +279,22 @@ Speicher. `ORGANISATOR_PASSWORT` Pflicht in `.env` — fehlt es, Schreiben
 komplett deaktiviert (503). Code Stand 06.09.2026 aus Rafis ZIP
 wiederhergestellt, lief/läuft produktiv, von Rafi bestätigt.
 
+**admin.html: Login-Sperre beim Laden (Rafi-Feedback, 07.09.2026)**: nur
+in `admin.html` (nicht in `raumplan.html`/`musikerplan.html`, die bleiben
+bewusst frei zugänglich zum Ansehen) wird das Passwort SOFORT beim Laden
+der Seite abgefragt UND geprüft, nicht erst beim ersten Speichern-Klick.
+Neuer, nebenwirkungsfreier Prüf-Endpunkt `GET /api/auth/pruefen` (nutzt
+dieselbe `pruefeOrganisatorAuth`-Middleware, gibt bei Erfolg nur
+`{status:'ok'}` zurück, sonst 401 wie gehabt). Solange keine gültige
+Anmeldung vorliegt, bleibt `#hauptinhalt` per `hidden`-Attribut komplett
+versteckt und nur `#loginSperre` (Meldungstext + "Passwort eingeben"-
+Button) sichtbar — verhindert, dass jemand ohne Passwort die
+Terminverwaltung überhaupt sieht oder öffnet, bevor er/sie zum Speichern
+kommt. Bei falschem Passwort bleibt die Sperre mit Fehlermeldung stehen,
+erneuter Klick auf den Button fragt neu. Die bestehende
+Schreib-Middleware/-route bleibt unverändert — dieser Endpunkt ist rein
+zusätzlich für die Früh-Prüfung im Frontend.
+
 ## 15. Terminverwaltung / admin.html (Phase 8)
 
 `server/public/admin.html` — **auf dem VPS ausgerollt und von Rafi
@@ -261,11 +309,19 @@ der Festival-Tage (`FESTIVAL_TAGE`, siehe Abschnitt 6), Wochentag daraus
 automatisch berechnet. Typ=Kzt sperrt Teilnehmer-Feld im Formular.
 Werk-Feld hat Autocomplete (Abschnitt 16). Validierungs-(400)/Konflikt-
 (409)-Fehler direkt im Formular angezeigt. Auth wie `raumplan.html`
-(Abschnitt 14). War end-to-end verifiziert (echtes Postgres + Playwright:
-Anlegen/Bearbeiten/Löschen, falsches Passwort, Konflikte, Kzt-Feldsperre)
-— dabei 2 Bugs gefunden+behoben (Abschnitt 13: Date-Objekt-Bug,
+(Abschnitt 14, inkl. Login-Sperre beim Laden seit 07.09.2026). War
+end-to-end verifiziert (echtes Postgres + Playwright: Anlegen/Bearbeiten/
+Löschen, falsches Passwort, Konflikte, Kzt-Feldsperre) — dabei 2 Bugs
+gefunden+behoben (Abschnitt 13: Date-Objekt-Bug,
 Status-Meldung-überschreibt-sich-Bug). Nav-Links zwischen `raumplan.html`,
 `musikerplan.html`, `admin.html` ergänzt.
+
+**Zeit-Felder (`fAnfang`/`fEnde`)**: `normalisiereZeit()` akzeptiert
+neben "14" → "14:00" und "9:5" → "09:05" seit 07.09.2026 (Rafi-Feedback)
+auch rein numerische Kurzeingaben ohne Doppelpunkt: 4-stellig "1230" →
+"12:30", 3-stellig "930" → "09:30". Reihenfolge der Regex-Prüfungen ist
+wichtig (erst 1-2-stellig, dann mit Doppelpunkt, dann 4-/3-stellig ohne
+Doppelpunkt) — siehe Kommentar direkt bei der Funktion in admin.html.
 
 ## 16. Werk-/Konzertliste (Phase 8-Erweiterung, 06.09.2026)
 

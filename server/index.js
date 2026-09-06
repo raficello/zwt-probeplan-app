@@ -38,12 +38,11 @@ const pool = process.env.DATABASE_URL
 
 app.use(express.json());
 
-// Statische Dateien: eigene Seiten (public/) + vis-timeline-Bibliothek
-// direkt aus node_modules ausgeliefert (kein CDN nötig, funktioniert
-// auch ohne Internetzugang am Aufführungsort — nur der Browser der
-// Besucher:innen muss den Server erreichen).
+// Statische Dateien: eigene Seiten (public/). Bis 06.09.2026 wurde hier
+// zusätzlich die vis-timeline-Bibliothek ausgeliefert -- ersetzt durch
+// die eigene vertikale Tagesansicht (tagesraster.js, Rafi-Feedback
+// 07.09.2026), Abhängigkeit deshalb entfernt (siehe package.json).
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/vendor/vis-timeline', express.static(path.join(__dirname, 'node_modules/vis-timeline')));
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Gemeinsame Konfliktprüfung für POST (excludeId=null) und PUT
@@ -188,6 +187,15 @@ app.get('/api/werke/vorschlaege', async (req, res) => {
 // selben Raum, Abschnitt 4) — bei Konflikt wird 409 zurückgegeben und
 // NICHTS geschrieben. Unbekannte Musiker-Kürzel werden automatisch
 // angelegt (Annahme, siehe PROGRESS.md "Offene Fragen").
+// Reiner Prüf-Endpunkt ohne Nebenwirkungen, damit admin.html das
+// Organisator:innen-Passwort direkt BEIM LADEN prüfen kann statt erst
+// beim ersten Speichern-Versuch (Rafi-Feedback, 07.09.2026). Nutzt
+// dieselbe Middleware wie die Schreib-Routen -- 401 bei falschem/
+// fehlendem Passwort, sonst 200 ohne Datenzugriff.
+app.get('/api/auth/pruefen', pruefeOrganisatorAuth, (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 app.post('/api/termine', pruefeOrganisatorAuth, async (req, res) => {
   if (!pool) {
     return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });

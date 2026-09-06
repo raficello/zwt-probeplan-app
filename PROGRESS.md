@@ -107,14 +107,24 @@ Downloads bei ihm nicht zuverlässig im normalen Downloads-Ordner landen
   (`admin.html`) fertig gebaut, **auf dem VPS ausgerollt und von Rafi
   bestätigt** (06.09.2026: Speichern/Löschen funktioniert produktiv).
   [x] Wochentags-Raumbeschränkung, `GET /api/raeume`, Raum-Produktivdaten
-  (`db/seed-raeume.sql`, noch auf dem VPS auszuführen). [x] Datum als
-  Festival-Tage-Auswahl überall (nicht nur Formular, auch Toolbar-
-  Navigation aller 3 Seiten). [x] Werk-Autocomplete + Teilnehmer-
-  Vorschlag (Abschnitt 16, `db/migration-werke.sql` +
-  `db/seed-werke-2026.sql`, noch auf dem VPS auszuführen). [ ] Der
-  eigentliche Parallelbetrieb/Testlauf mit einer realen Probenwoche hat
-  noch nicht begonnen — das ist der nächste inhaltliche Schritt, sobald
-  alle Seed-Skripte auf dem VPS gelaufen sind.
+  (`db/seed-raeume.sql`). [x] Datum als Festival-Tage-Auswahl überall
+  (nicht nur Formular, auch Toolbar-Navigation aller 3 Seiten). [x]
+  Werk-Autocomplete + Teilnehmer-Vorschlag (Abschnitt 16,
+  `db/migration-werke.sql` + `db/seed-werke-2026.sql`). **Alles oben
+  von Rafi bestätigt (07.09.2026): "Funktioniert alles."**
+  [x] 07.09.2026, drittes Feedback-Paket, alle 3 lokal per echtem
+  Postgres+Playwright verifiziert, noch NICHT auf dem VPS ausgerollt:
+  Zeit-Feld akzeptiert jetzt auch "1230"/"930" ohne Doppelpunkt
+  (Abschnitt 15); admin.html fragt Passwort sofort beim Laden ab statt
+  erst beim Speichern (`GET /api/auth/pruefen`, Abschnitt 14);
+  Raumplan-/Musikerplan-Ansicht komplett auf eigene vertikale
+  Tagesansicht umgestellt (`tagesraster.js`, Abschnitt 6),
+  `vis-timeline`-Abhängigkeit entfernt (`package.json`/
+  `package-lock.json` geändert — Deploy muss deshalb `docker compose up
+  -d --build app` erneut laufen lassen, KEINE neue DB-Migration nötig).
+  [ ] Der eigentliche Parallelbetrieb/Testlauf mit einer realen
+  Probenwoche hat noch nicht begonnen — nächster Schritt, sobald das
+  dritte Feedback-Paket auf dem VPS bestätigt ist.
 - **Phase 9** (Umstieg): noch nicht begonnen.
 
 ## Offene Fragen / Annahmen

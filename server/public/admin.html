@@ -34,6 +34,8 @@
   #raumHinweis { font-size: 0.8rem; color: #555; }
   .fehlerliste { color: #900; font-size: 0.85rem; margin: 0.25rem 0 0; padding-left: 1.1rem; }
   #btnNeuerTermin { margin-bottom: 0.75rem; }
+  #loginSperre { border: 1px solid #ccc; border-radius: 4px; padding: 1rem; max-width: 30rem; }
+  #loginSperre button { font-size: 1rem; padding: 0.35rem 0.9rem; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -43,73 +45,84 @@
     <a href="/musikerplan.html">Zur Musiker-Ansicht</a>
   </nav>
 
-  <div class="toolbar">
-    <button id="btnZurueck">&larr; Tag zurück</button>
-    <select id="datum"></select>
-    <button id="btnVor">Tag vor &rarr;</button>
-    <span id="standInfo" style="font-size:0.85rem;color:#555"></span>
+  <!-- Rafi-Feedback 07.09.2026: Passwort soll beim Laden der Seite
+       abgefragt werden, nicht erst beim ersten Speichern-Versuch --
+       solange nicht erfolgreich eingeloggt, bleibt #hauptinhalt
+       versteckt und nur diese Sperre sichtbar. -->
+  <div id="loginSperre">
+    <p id="loginNachricht">Für die Terminverwaltung ist das Organisator:innen-Passwort nötig.</p>
+    <button id="btnLoginErneut" type="button">Passwort eingeben</button>
   </div>
 
-  <div id="status"></div>
-
-  <button id="btnNeuerTermin">+ Neuer Termin</button>
-
-  <form id="terminForm" class="versteckt">
-    <input type="hidden" id="terminId">
-    <label>Datum
-      <select id="fDatum" required></select>
-      <span id="wochentagAnzeige"></span>
-    </label>
-    <label>Anfangszeit
-      <input type="text" id="fAnfang" required placeholder="HH:MM" inputmode="numeric" autocomplete="off">
-    </label>
-    <label>Endzeit
-      <input type="text" id="fEnde" required placeholder="HH:MM" inputmode="numeric" autocomplete="off">
-    </label>
-    <label>Raum
-      <select id="fRaum" required></select>
-      <span id="raumHinweis"></span>
-    </label>
-    <label>Typ
-      <select id="fTyp">
-        <option value="">(leer) — normale Probe</option>
-        <option value="GP">GP — Generalprobe</option>
-        <option value="Kzt">Kzt — Konzertzeit-Blockkopf (erscheint bei allen)</option>
-        <option value="K">K — Konzertstück</option>
-        <option value="Klf">Klf</option>
-      </select>
-    </label>
-    <label class="breit">Werk
-      <input type="text" id="fWerk" required placeholder="Nummer (z.B. 401) oder Namensanfang" list="werkVorschlaege" autocomplete="off">
-      <datalist id="werkVorschlaege"></datalist>
-    </label>
-    <label class="breit" id="fTeilnehmerWrap">Teilnehmer (Kürzel, mit Komma oder Leerzeichen getrennt)
-      <input type="text" id="fTeilnehmer" placeholder="z.B. AB, CD, GH">
-    </label>
-    <label class="breit">Bemerkungen
-      <textarea id="fBemerkungen" rows="2"></textarea>
-    </label>
-    <div class="aktionen-form">
-      <button type="submit" id="btnSpeichern">Anlegen</button>
-      <button type="button" id="btnAbbrechen">Abbrechen</button>
+  <div id="hauptinhalt" hidden>
+    <div class="toolbar">
+      <button id="btnZurueck">&larr; Tag zurück</button>
+      <select id="datum"></select>
+      <button id="btnVor">Tag vor &rarr;</button>
+      <span id="standInfo" style="font-size:0.85rem;color:#555"></span>
     </div>
-    <ul class="fehlerliste breit" id="formFehler" hidden></ul>
-  </form>
 
-  <table id="tabelle">
-    <thead>
-      <tr>
-        <th>Zeit</th>
-        <th>Raum</th>
-        <th>Typ</th>
-        <th>Werk</th>
-        <th>Teilnehmer</th>
-        <th>Bemerkungen</th>
-        <th>Aktionen</th>
-      </tr>
-    </thead>
-    <tbody id="tabelleBody"></tbody>
-  </table>
+    <div id="status"></div>
+
+    <button id="btnNeuerTermin">+ Neuer Termin</button>
+
+    <form id="terminForm" class="versteckt">
+      <input type="hidden" id="terminId">
+      <label>Datum
+        <select id="fDatum" required></select>
+        <span id="wochentagAnzeige"></span>
+      </label>
+      <label>Anfangszeit
+        <input type="text" id="fAnfang" required placeholder="HH:MM" inputmode="numeric" autocomplete="off">
+      </label>
+      <label>Endzeit
+        <input type="text" id="fEnde" required placeholder="HH:MM" inputmode="numeric" autocomplete="off">
+      </label>
+      <label>Raum
+        <select id="fRaum" required></select>
+        <span id="raumHinweis"></span>
+      </label>
+      <label>Typ
+        <select id="fTyp">
+          <option value="">(leer) — normale Probe</option>
+          <option value="GP">GP — Generalprobe</option>
+          <option value="Kzt">Kzt — Konzertzeit-Blockkopf (erscheint bei allen)</option>
+          <option value="K">K — Konzertstück</option>
+          <option value="Klf">Klf</option>
+        </select>
+      </label>
+      <label class="breit">Werk
+        <input type="text" id="fWerk" required placeholder="Nummer (z.B. 401) oder Namensanfang" list="werkVorschlaege" autocomplete="off">
+        <datalist id="werkVorschlaege"></datalist>
+      </label>
+      <label class="breit" id="fTeilnehmerWrap">Teilnehmer (Kürzel, mit Komma oder Leerzeichen getrennt)
+        <input type="text" id="fTeilnehmer" placeholder="z.B. AB, CD, GH">
+      </label>
+      <label class="breit">Bemerkungen
+        <textarea id="fBemerkungen" rows="2"></textarea>
+      </label>
+      <div class="aktionen-form">
+        <button type="submit" id="btnSpeichern">Anlegen</button>
+        <button type="button" id="btnAbbrechen">Abbrechen</button>
+      </div>
+      <ul class="fehlerliste breit" id="formFehler" hidden></ul>
+    </form>
+
+    <table id="tabelle">
+      <thead>
+        <tr>
+          <th>Zeit</th>
+          <th>Raum</th>
+          <th>Typ</th>
+          <th>Werk</th>
+          <th>Teilnehmer</th>
+          <th>Bemerkungen</th>
+          <th>Aktionen</th>
+        </tr>
+      </thead>
+      <tbody id="tabelleBody"></tbody>
+    </table>
+  </div>
 
   <script src="/color.js"></script>
   <script>
@@ -218,6 +231,52 @@
       return 'Basic ' + btoa('organisator:' + organisatorPasswort);
     }
 
+    // Rafi-Feedback 07.09.2026: Passwort soll beim LADEN der Seite
+    // abgefragt und geprüft werden, nicht erst beim ersten Speichern-
+    // Versuch -- solange kein gültiges Passwort vorliegt, bleibt der
+    // eigentliche Inhalt (#hauptinhalt) versteckt. Prüfung läuft gegen
+    // einen reinen Lese-Endpunkt ohne Nebenwirkungen (GET
+    // /api/auth/pruefen), damit ein falsches Passwort sofort auffällt
+    // statt erst beim ersten "Speichern"-Klick.
+    var loginSperreEl = document.getElementById('loginSperre');
+    var loginNachrichtEl = document.getElementById('loginNachricht');
+    var hauptinhaltEl = document.getElementById('hauptinhalt');
+
+    function zeigeLoginSperre(nachricht) {
+      loginNachrichtEl.textContent = nachricht || 'Für die Terminverwaltung ist das Organisator:innen-Passwort nötig.';
+      loginSperreEl.hidden = false;
+      hauptinhaltEl.hidden = true;
+    }
+
+    function versucheLogin() {
+      var eingabe = window.prompt('Organisator:innen-Passwort:');
+      if (eingabe === null) {
+        zeigeLoginSperre('Ohne Passwort kann admin.html nicht verwendet werden.');
+        return;
+      }
+      organisatorPasswort = eingabe;
+      loginNachrichtEl.textContent = 'Prüfe Passwort...';
+      fetch('/api/auth/pruefen', {
+        headers: { Authorization: 'Basic ' + btoa('organisator:' + organisatorPasswort) },
+      })
+        .then(function (res) {
+          if (res.status === 401) {
+            organisatorPasswort = null;
+            zeigeLoginSperre('Falsches Passwort.');
+            return;
+          }
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          loginSperreEl.hidden = true;
+          hauptinhaltEl.hidden = false;
+          starteApp();
+        })
+        .catch(function () {
+          zeigeLoginSperre('Verbindung zum Server fehlgeschlagen. Bitte "Passwort eingeben" erneut klicken.');
+        });
+    }
+
+    document.getElementById('btnLoginErneut').addEventListener('click', versucheLogin);
+
     function raumName(raumId) {
       var r = raeume.find(function (x) { return x.id === raumId; });
       return r ? r.name : '(Raum #' + raumId + ')';
@@ -260,6 +319,12 @@
       if (nurStunde) return nurStunde[1].padStart(2, '0') + ':00';
       var stundeMinute = /^([01]?\d|2[0-3]):([0-5]?\d)$/.exec(raw);
       if (stundeMinute) return stundeMinute[1].padStart(2, '0') + ':' + stundeMinute[2].padStart(2, '0');
+      // Vierstellig ohne Doppelpunkt, z.B. "1230" -> "12:30"
+      var vierstellig = /^([01]\d|2[0-3])([0-5]\d)$/.exec(raw);
+      if (vierstellig) return vierstellig[1] + ':' + vierstellig[2];
+      // Dreistellig ohne Doppelpunkt, z.B. "930" -> "09:30"
+      var dreistellig = /^(\d)([0-5]\d)$/.exec(raw);
+      if (dreistellig) return '0' + dreistellig[1] + ':' + dreistellig[2];
       return raw;
     }
 
@@ -582,28 +647,35 @@
         });
     }
 
-    document.getElementById('btnZurueck').addEventListener('click', function () { datumVerschieben(-1); });
-    document.getElementById('btnVor').addEventListener('click', function () { datumVerschieben(1); });
-    datumInput.addEventListener('change', function () { ladeTag(datumInput.value); });
-    document.getElementById('btnNeuerTermin').addEventListener('click', formularOeffnenFuerNeuenTermin);
-    document.getElementById('btnAbbrechen').addEventListener('click', formularSchliessen);
-    document.getElementById('fDatum').addEventListener('change', zeigeWochentag);
-    document.getElementById('fAnfang').addEventListener('blur', zeitFeldNormalisieren);
-    document.getElementById('fEnde').addEventListener('blur', zeitFeldNormalisieren);
-    document.getElementById('fRaum').addEventListener('change', zeigeRaumHinweis);
-    document.getElementById('fTyp').addEventListener('change', aktualisiereTeilnehmerFeld);
-    document.getElementById('fWerk').addEventListener('input', werkFeldGeaendert);
-    formEl.addEventListener('submit', terminSpeichern);
+    // Läuft erst NACH erfolgreicher Passwort-Prüfung (siehe versucheLogin
+    // oben) -- vorher ist #hauptinhalt versteckt und keiner dieser
+    // Event-Listener wäre ohnehin nutzbar.
+    function starteApp() {
+      document.getElementById('btnZurueck').addEventListener('click', function () { datumVerschieben(-1); });
+      document.getElementById('btnVor').addEventListener('click', function () { datumVerschieben(1); });
+      datumInput.addEventListener('change', function () { ladeTag(datumInput.value); });
+      document.getElementById('btnNeuerTermin').addEventListener('click', formularOeffnenFuerNeuenTermin);
+      document.getElementById('btnAbbrechen').addEventListener('click', formularSchliessen);
+      document.getElementById('fDatum').addEventListener('change', zeigeWochentag);
+      document.getElementById('fAnfang').addEventListener('blur', zeitFeldNormalisieren);
+      document.getElementById('fEnde').addEventListener('blur', zeitFeldNormalisieren);
+      document.getElementById('fRaum').addEventListener('change', zeigeRaumHinweis);
+      document.getElementById('fTyp').addEventListener('change', aktualisiereTeilnehmerFeld);
+      document.getElementById('fWerk').addEventListener('input', werkFeldGeaendert);
+      formEl.addEventListener('submit', terminSpeichern);
 
-    var urlParams = new URLSearchParams(window.location.search);
-    var startDatum = urlParams.get('datum');
-    fuelleDatumsAuswahl(datumInput);
-    fuelleDatumsAuswahl(document.getElementById('fDatum'));
-    setzeDatumsWert(datumInput, FESTIVAL_TAGE.indexOf(startDatum) !== -1 ? startDatum : FESTIVAL_TAGE[0]);
-    zeigeStand();
-    ladeRaeume().then(function () {
-      ladeTag(datumInput.value);
-    });
+      var urlParams = new URLSearchParams(window.location.search);
+      var startDatum = urlParams.get('datum');
+      fuelleDatumsAuswahl(datumInput);
+      fuelleDatumsAuswahl(document.getElementById('fDatum'));
+      setzeDatumsWert(datumInput, FESTIVAL_TAGE.indexOf(startDatum) !== -1 ? startDatum : FESTIVAL_TAGE[0]);
+      zeigeStand();
+      ladeRaeume().then(function () {
+        ladeTag(datumInput.value);
+      });
+    }
+
+    versucheLogin();
   </script>
 </body>
 </html>
