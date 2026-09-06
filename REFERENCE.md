@@ -5,16 +5,16 @@ eine Sitzung ohne Chat-Historie das System korrekt nachbauen kann. Wo
 "unklar/zu verifizieren" steht: sinnvolle Annahme treffen, in PROGRESS.md
 "Offene Fragen" vermerken, nicht auf Antwort warten.
 
-**Update 06.09.2026**: Der Code für Phase 1–7 (`db/`, `migrate/`,
-`server/`, `deploy/`) war nach einer Sandbox-Neubereitstellung
-verloren, wurde aber NOCH IN DERSELBEN NACHT aus einem ZIP-Backup von
-Rafi vollständig wiederhergestellt (siehe PROGRESS.md) — die
-"Code verloren"-Hinweise unten sind damit nur noch für Phase 8
-(`admin.html`, `raumTagErlaubt()`, `GET /api/raeume`) aktuell, nicht
-mehr für Phase 1–7. Diese Datei wurde ausserdem am 06.09.2026 stark
-gekürzt (fälschlich angenommenes update_trigger-Grössenlimit, siehe
-PROGRESS.md "Offene Fragen" — Korrektur); Detailnarrative sind dabei
-verlorengegangen, die Kernfakten (Regeln, Schema, Fixes) sind erhalten.
+**Update 06.09.2026**: Der komplette Code (Phase 1–8: `db/`, `migrate/`,
+`server/` inkl. `admin.html`, `deploy/`) war nach einer Sandbox-
+Neubereitstellung verloren, wurde aber NOCH IN DERSELBEN NACHT aus zwei
+ZIP-Backups von Rafi vollständig wiederhergestellt (siehe PROGRESS.md)
+— alle "Code verloren"-Hinweise, die in einer früheren Fassung dieser
+Datei noch standen, sind damit überholt. Diese Datei wurde ausserdem am
+06.09.2026 stark gekürzt (fälschlich angenommenes update_trigger-
+Grössenlimit, siehe PROGRESS.md — Korrektur); Detailnarrative sind
+dabei verlorengegangen, die Kernfakten (Regeln, Schema, Fixes) sind
+erhalten.
 
 ## 1. Sheet "Master"
 
@@ -32,7 +32,7 @@ Termine.
 - Sheet "confRaeume": Spalte A = Raumliste, Spalte N = erlaubte Tage
   (`"Mo-Mi"`, `"Do-So"`, `"Mo,Mi,Fr"`, leer=alle Tage; Codes Mo-So). War
   durchgesetzt seit Phase 8 (`raeume.erlaubte_tage`, `raumTagErlaubt()` in
-  `server/validation.js`) — Code Stand 06.09.2026 verloren (Phase 8, NICHT im wiederhergestellten Rafi-ZIP enthalten), Regel gilt.
+  `server/validation.js`). Code wiederhergestellt (06.09.2026, Rafis zweitem ZIP), läuft produktiv.
 - Pufferzeiten-Matrix ("roomIntervals"): Minuten Puffer zwischen Terminen
   im selben Raum. Sheet-Quelle nie abschliessend lokalisiert (unklar).
 
@@ -233,9 +233,9 @@ wiederhergestellt, lief/läuft produktiv, von Rafi bestätigt.
 
 ## 15. Terminverwaltung / admin.html (Phase 8)
 
-**Stand 06.09.2026: verloren (Datenverlust) UND noch nicht auf dem VPS
-ausgerollt** — existiert evtl. nirgends mehr ausser einem ZIP bei Rafi.
-Spezifikation für Neuaufbau (war fertig gebaut+getestet 05.09.2026):
+`server/public/admin.html` — Code Stand 06.09.2026 aus Rafis zweitem
+ZIP wiederhergestellt (war zuvor kurzzeitig komplett verloren, siehe
+PROGRESS.md), noch NICHT auf dem VPS ausgerollt.
 
 Tagesansicht mit Terminliste (neu/geändert farblich hervorgehoben, siehe
 Abschnitt 5), "+ Neuer Termin"/"Bearbeiten"-Formular (POST/PUT). Raum-
