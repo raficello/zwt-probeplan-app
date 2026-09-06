@@ -61,10 +61,10 @@
       <span id="wochentagAnzeige"></span>
     </label>
     <label>Anfangszeit
-      <input type="time" id="fAnfang" required>
+      <input type="text" id="fAnfang" required placeholder="HH:MM" inputmode="numeric" autocomplete="off">
     </label>
     <label>Endzeit
-      <input type="time" id="fEnde" required>
+      <input type="text" id="fEnde" required placeholder="HH:MM" inputmode="numeric" autocomplete="off">
     </label>
     <label>Raum
       <select id="fRaum" required></select>
@@ -195,6 +195,27 @@
       } else {
         hinweisEl.textContent = 'An allen Wochentagen erlaubt';
       }
+    }
+
+    // Anfangs-/Endzeit sind bewusst normale Text- statt <input type="time">-
+    // Felder (Rafi-Feedback, 06.09.2026): native Zeit-Widgets liefern bei nur
+    // teilweise ausgefüllten Segmenten (z.B. nur die Stunde eingegeben) einen
+    // leeren value statt "HH:00" -- das lässt sich nicht nachträglich
+    // korrigieren. Als Text-Feld können wir "14" oder "14:3" selbst zu
+    // "14:00" bzw. "14:03" normalisieren. Nicht erkennbare Eingaben werden
+    // unverändert weitergereicht, die Server-Validierung meldet dann den
+    // passenden Fehler.
+    function normalisiereZeit(raw) {
+      raw = (raw || '').trim();
+      var nurStunde = /^([01]?\d|2[0-3])$/.exec(raw);
+      if (nurStunde) return nurStunde[1].padStart(2, '0') + ':00';
+      var stundeMinute = /^([01]?\d|2[0-3]):([0-5]?\d)$/.exec(raw);
+      if (stundeMinute) return stundeMinute[1].padStart(2, '0') + ':' + stundeMinute[2].padStart(2, '0');
+      return raw;
+    }
+
+    function zeitFeldNormalisieren(ev) {
+      ev.target.value = normalisiereZeit(ev.target.value);
     }
 
     function zeigeWochentag() {
@@ -369,8 +390,8 @@
       return {
         wochentag: wochentagVonDatum(datum),
         datum: datum,
-        anfangszeit: document.getElementById('fAnfang').value,
-        endzeit: document.getElementById('fEnde').value,
+        anfangszeit: normalisiereZeit(document.getElementById('fAnfang').value),
+        endzeit: normalisiereZeit(document.getElementById('fEnde').value),
         raumId: Number(document.getElementById('fRaum').value),
         typ: document.getElementById('fTyp').value,
         werk: document.getElementById('fWerk').value,
@@ -465,6 +486,8 @@
     document.getElementById('btnNeuerTermin').addEventListener('click', formularOeffnenFuerNeuenTermin);
     document.getElementById('btnAbbrechen').addEventListener('click', formularSchliessen);
     document.getElementById('fDatum').addEventListener('change', zeigeWochentag);
+    document.getElementById('fAnfang').addEventListener('blur', zeitFeldNormalisieren);
+    document.getElementById('fEnde').addEventListener('blur', zeitFeldNormalisieren);
     document.getElementById('fRaum').addEventListener('change', zeigeRaumHinweis);
     document.getElementById('fTyp').addEventListener('change', aktualisiereTeilnehmerFeld);
     formEl.addEventListener('submit', terminSpeichern);
