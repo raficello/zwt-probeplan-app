@@ -22,6 +22,7 @@ const {
   DELETE_TERMIN_SQL,
   SPERREN_SQL,
   SELECT_LOCKED_AT_SQL,
+  SELECT_WERK_VORSCHLAEGE_SQL,
   groupTermineRows,
 } = require('./queries');
 const { parseTerminInput, findKonflikte, raumTagErlaubt } = require('./validation');
@@ -142,6 +143,37 @@ app.get('/api/raeume', async (req, res) => {
         name: r.name,
         audCode: r.aud_code,
         erlaubteTage: r.erlaubte_tage || [],
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// GET /api/werke/vorschlaege?q=<Text> — Autocomplete für das Werk-Feld
+// in der Terminverwaltung (Phase 8-Erweiterung, Rafi-Feedback 06.09.2026,
+// siehe REFERENCE.md Abschnitt 16): sucht sowohl Konzertstücke (z.B.
+// "401" = Konzert 4, 1. Werk) als auch feste Ablaufpunkte (z.B. "3" =
+// Dîner), per Nummer-Präfix ODER Namens-Präfix. Liefert je Treffer den
+// Standard-Teilnehmerkreis mit, den admin.html dann vorschlägt (bleibt
+// änderbar). Offen, kein Auth nötig (Lesen, wie GET /api/raeume).
+app.get('/api/werke/vorschlaege', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  }
+  const q = (req.query.q || '').trim();
+  if (!q) {
+    return res.json({ vorschlaege: [] });
+  }
+  try {
+    const result = await pool.query(SELECT_WERK_VORSCHLAEGE_SQL, [q]);
+    res.json({
+      vorschlaege: result.rows.map((r) => ({
+        nummer: r.nummer,
+        name: r.name,
+        typ: r.typ,
+        dauerMinuten: r.dauer_minuten,
+        teilnehmer: r.teilnehmer || [],
       })),
     });
   } catch (err) {

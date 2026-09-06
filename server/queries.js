@@ -202,6 +202,36 @@ const SELECT_LOCKED_AT_SQL = `
   SELECT wert FROM konfiguration WHERE schluessel = 'locked_at'
 `;
 
+// Werk-Autocomplete (Phase 8-Erweiterung, siehe REFERENCE.md Abschnitt 16
+// und db/migration-werke.sql): sucht sowohl in den Konzertstücken
+// (werke, z.B. "401" = Konzert 4, 1. Werk) als auch in den festen
+// Ablaufpunkten (werk_vorlagen, z.B. "3" = Dîner). $1 = Suchtext, matcht
+// entweder am Anfang der Nummer ODER am Anfang des Namens (Rafi-Feedback:
+// beides soll funktionieren -- Nummer eingeben ODER Namensanfang).
+const SELECT_WERK_VORSCHLAEGE_SQL = `
+  (
+    SELECT w.nummer, w.name, NULL::text AS typ, w.dauer_minuten,
+      COALESCE(array_agg(m.kuerzel ORDER BY m.kuerzel) FILTER (WHERE m.kuerzel IS NOT NULL), '{}') AS teilnehmer
+    FROM werke w
+    LEFT JOIN werk_musiker wm ON wm.werk_id = w.id
+    LEFT JOIN musiker m ON m.id = wm.musiker_id
+    WHERE w.nummer::text LIKE $1 || '%' OR w.name ILIKE $1 || '%'
+    GROUP BY w.id
+  )
+  UNION ALL
+  (
+    SELECT wv.nummer, wv.name, wv.typ, wv.dauer_minuten,
+      COALESCE(array_agg(m.kuerzel ORDER BY m.kuerzel) FILTER (WHERE m.kuerzel IS NOT NULL), '{}') AS teilnehmer
+    FROM werk_vorlagen wv
+    LEFT JOIN werk_vorlage_musiker wvm ON wvm.werk_vorlage_id = wv.id
+    LEFT JOIN musiker m ON m.id = wvm.musiker_id
+    WHERE wv.nummer::text LIKE $1 || '%' OR wv.name ILIKE $1 || '%'
+    GROUP BY wv.id
+  )
+  ORDER BY nummer
+  LIMIT 15
+`;
+
 module.exports = {
   SELECT_TERMINE_SQL,
   SELECT_TERMIN_BY_ID_SQL,
@@ -217,5 +247,6 @@ module.exports = {
   DELETE_TERMIN_SQL,
   SPERREN_SQL,
   SELECT_LOCKED_AT_SQL,
+  SELECT_WERK_VORSCHLAEGE_SQL,
   groupTermineRows,
 };

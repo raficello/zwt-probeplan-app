@@ -80,7 +80,8 @@
       </select>
     </label>
     <label class="breit">Werk
-      <input type="text" id="fWerk" required placeholder="z.B. Beethoven Sinfonie Nr. 5">
+      <input type="text" id="fWerk" required placeholder="Nummer (z.B. 401) oder Namensanfang" list="werkVorschlaege" autocomplete="off">
+      <datalist id="werkVorschlaege"></datalist>
     </label>
     <label class="breit" id="fTeilnehmerWrap">Teilnehmer (Kürzel, mit Komma oder Leerzeichen getrennt)
       <input type="text" id="fTeilnehmer" placeholder="z.B. AB, CD, GH">
@@ -288,6 +289,59 @@
         teilnehmerInput.disabled = false;
         wrap.title = '';
       }
+    }
+
+    // Werk-Autocomplete (Rafi-Feedback, 06.09.2026, siehe REFERENCE.md
+    // Abschnitt 16): Nummer (z.B. "401") oder Namensanfang eingeben,
+    // Vorschlagsliste kommt aus GET /api/werke/vorschlaege (durchsucht
+    // sowohl echte Konzertstücke als auch feste Ablaufpunkte wie
+    // "Dîner"). Bei exaktem Treffer werden Typ (nur falls noch leer) und
+    // Teilnehmer (bleibt änderbar, siehe Kzt-Sonderregel oben) vorgefüllt.
+    var werkVorschlaegeNachName = {}; // Name (kleingeschrieben) -> Vorschlag
+    var werkVorschlaegeNachNummer = {}; // Nummer als String -> Vorschlag
+    var werkSucheTimer = null;
+
+    function ladeWerkVorschlaege(suchtext) {
+      fetch('/api/werke/vorschlaege?q=' + encodeURIComponent(suchtext))
+        .then(function (res) { return res.ok ? res.json() : { vorschlaege: [] }; })
+        .then(function (data) {
+          werkVorschlaegeNachName = {};
+          werkVorschlaegeNachNummer = {};
+          var datalist = document.getElementById('werkVorschlaege');
+          datalist.innerHTML = '';
+          (data.vorschlaege || []).forEach(function (v) {
+            werkVorschlaegeNachName[v.name.toLowerCase()] = v;
+            werkVorschlaegeNachNummer[String(v.nummer)] = v;
+            var opt = document.createElement('option');
+            opt.value = v.name;
+            opt.label = String(v.nummer) + ' — ' + v.teilnehmer.join(' ');
+            datalist.appendChild(opt);
+          });
+          werkExaktenTrefferUebernehmen();
+        })
+        .catch(function () { /* Autocomplete ist ein Komfortfeature -- bei Fehler still bleiben */ });
+    }
+
+    // Übernimmt Teilnehmer/Typ, falls der aktuelle Feldinhalt exakt einer
+    // Nummer oder einem Namen aus den zuletzt geladenen Vorschlägen
+    // entspricht.
+    function werkExaktenTrefferUebernehmen() {
+      var wert = document.getElementById('fWerk').value.trim();
+      var treffer = werkVorschlaegeNachNummer[wert] || werkVorschlaegeNachName[wert.toLowerCase()];
+      if (!treffer) return;
+      var typEl = document.getElementById('fTyp');
+      if (!typEl.value && treffer.typ) typEl.value = treffer.typ;
+      if (typEl.value !== 'Kzt') {
+        document.getElementById('fTeilnehmer').value = treffer.teilnehmer.join(' ');
+      }
+      aktualisiereTeilnehmerFeld();
+    }
+
+    function werkFeldGeaendert() {
+      var wert = document.getElementById('fWerk').value.trim();
+      clearTimeout(werkSucheTimer);
+      if (wert.length < 1) return;
+      werkSucheTimer = setTimeout(function () { ladeWerkVorschlaege(wert); }, 200);
     }
 
     function ladeRaeume() {
@@ -538,6 +592,7 @@
     document.getElementById('fEnde').addEventListener('blur', zeitFeldNormalisieren);
     document.getElementById('fRaum').addEventListener('change', zeigeRaumHinweis);
     document.getElementById('fTyp').addEventListener('change', aktualisiereTeilnehmerFeld);
+    document.getElementById('fWerk').addEventListener('input', werkFeldGeaendert);
     formEl.addEventListener('submit', terminSpeichern);
 
     var urlParams = new URLSearchParams(window.location.search);
