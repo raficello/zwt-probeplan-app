@@ -36,11 +36,14 @@ identisch fehl: "access denied by the git proxy:
 raficello/zwt-probeplan-app is not in this session's authorized
 repository set... add the repository to the session's sources."
 Vermutung: diese Autorisierung wird pro Sitzung/Scheduled-Task beim
-Start festgelegt, nicht nachträglich während eine Sitzung läuft — die
-nächste nächtliche Sitzung (neue Session) sollte es also automatisch
-erneut probieren (Schritt 5) und könnte dann funktionieren. Falls
-nicht: prüfen, ob beim Anlegen eines Scheduled Tasks eine Repo-Auswahl
-möglich ist.
+Start festgelegt, nicht nachträglich während eine Sitzung läuft.
+**Update 07.09.2026**: in einer NEUEN (nächtlichen) Sitzung erneut
+probiert — exakt derselbe 403-Fehler. Die Vermutung "neue Sitzung löst
+es automatisch" ist damit widerlegt. Muss aktiv behoben werden: prüfen,
+ob beim Anlegen des Scheduled Tasks (oder in den Claude-Einstellungen)
+eine explizite Repo-Freigabe für automatisierte Sitzungen möglich ist
+— Rafi müsste das einrichten, kann von hier aus nicht selbst behoben
+werden.
 
 **Korrektur zum update_trigger-"Grössenlimit"** (fälschlich in einer
 früheren Fassung dieser Nacht angenommen): der Fehler "result exceeds
