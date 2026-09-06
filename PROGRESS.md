@@ -123,5 +123,12 @@ oder panisch zu kürzen.
 
 ## Letzte Sicherung (ZIP an Nutzer per SendUserFile)
 - 03.09.2026, 04.09.2026; danach unregelmässig während Tagsitzungen.
-- 06.09.2026 (nächtlich): ZIP verschickt — enthält NUR die 3
-  Markdown-Dateien (kein Programmcode mehr vorhanden).
+- 06.09.2026, 07:12 UTC (nächtlich): `zwt-probeplan-app-docs-only.zip`
+  — enthielt NUR die 3 Markdown-Dateien (kein Programmcode vorhanden).
+- 06.09.2026, 07:34 UTC (nächtlich): **`zwt-probeplan-app_2026-09-06_0734UTC.zip`**
+  — vollständiger Stand inkl. wiederhergestelltem Phase-1–7-Code. Ab
+  jetzt bei jedem Versand den exakten Dateinamen (mit Zeitstempel) in
+  der Begleitnachricht nennen, damit Rafi die Version zuordnen kann
+  (siehe Nachricht von Rafi, 06.09.2026: Downloads landen bei ihm nicht
+  zuverlässig im normalen Downloads-Ordner, macht Versions-Verwechslung
+  leicht möglich — Dateiname ist der einzige verlässliche Anker).

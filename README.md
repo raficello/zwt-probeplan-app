@@ -38,7 +38,16 @@ eigene, auf einem Infomaniak-VPS gehostete Web-Anwendung.
    den erwarteten Code enthält (nicht nur die drei Markdown-Dateien) —
    siehe PROGRESS.md "Kritischer Befund" vom 06.09.2026: ein leeres/nur
    aus Doku bestehendes Verzeichnis ist real vorgekommen und wurde erst
-   bemerkt, weil bewusst nachgesehen wurde.
+   bemerkt, weil bewusst nachgesehen wurde. Falls leer/unvollständig:
+   IMMER zuerst Rafi fragen, ob er ein aktuelles ZIP hat, bevor aus
+   REFERENCE.md neu gebaut wird — hat am 06.09.2026 den grössten Teil
+   eines vermeintlichen Totalverlusts gerettet.
+8. **Jedes per SendUserFile verschickte ZIP bekommt einen Zeitstempel im
+   Dateinamen** (z.B. `zwt-probeplan-app_2026-09-06_0734UTC.zip`), und
+   der exakte Dateiname wird IMMER in der Begleitnachricht genannt (auf
+   Rafis Wunsch, 06.09.2026 — bei ihm landen Downloads nicht zuverlässig
+   im normalen Downloads-Ordner, der Dateiname ist sein einziger
+   verlässlicher Anker, um Versionen auseinanderzuhalten).
 
 ## Stack (Stand Migrationsplan)
 
