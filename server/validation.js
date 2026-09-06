@@ -134,4 +134,25 @@ function findKonflikte(existierendeTermine, kandidat, pufferMinuten) {
   return konflikte;
 }
 
-module.exports = { WOCHENTAGE, ERLAUBTE_TYPEN, timeToMinutes, parseTerminInput, findKonflikte };
+/**
+ * Wochentags-Raumbeschränkung (REFERENCE.md Abschnitt 2, Nachfolger von
+ * MasterOrtDayValidation.gs): manche Räume dürfen nur an bestimmten
+ * Wochentagen belegt werden (z.B. confRaeume-Spalte "Erlaubte Tage").
+ * `erlaubteTage` ist entweder null/leeres Array (= an allen Tagen
+ * erlaubt) oder ein Array deutscher Tages-Codes (Mo..So). Reine
+ * Funktion, keine Datenbank nötig, damit sie ohne echtes Postgres
+ * getestet werden kann.
+ */
+function raumTagErlaubt(erlaubteTage, wochentag) {
+  if (!erlaubteTage || erlaubteTage.length === 0) return true;
+  return erlaubteTage.includes(wochentag);
+}
+
+module.exports = {
+  WOCHENTAGE,
+  ERLAUBTE_TYPEN,
+  timeToMinutes,
+  parseTerminInput,
+  findKonflikte,
+  raumTagErlaubt,
+};

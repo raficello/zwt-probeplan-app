@@ -41,6 +41,23 @@ const SELECT_TERMINE_SQL = `
  * Array von Terminen mit teilnehmer-Array (statt einer Zeile pro
  * Termin-Musiker-Paar).
  */
+// `date`-Spalten liefert node-postgres als JS-Date-Objekt (Mitternacht
+// UTC), NICHT als "YYYY-MM-DD"-String — JSON.stringify (res.json())
+// macht daraus einen vollen ISO-Zeitstempel ("2026-09-07T00:00:00.000Z"),
+// nicht "2026-09-07". Bisher fiel das nicht auf, weil raumplan.html/
+// musikerplan.html das angeforderte Datum aus dem eigenen <input
+// type="date">-Feld weiterverwenden statt termin.datum aus der
+// API-Antwort zu lesen — server/pdf.js kennt genau dieses Muster bereits
+// (siehe formatiereDatum dort). Per echtem Browser-Test gefunden, als
+// die neue Terminverwaltung (Phase 8) t.datum erstmals in ein
+// <input type="date"> schrieb: der volle ISO-String macht das Feld
+// leer, weil <input type="date"> NUR "YYYY-MM-DD" akzeptiert. Deshalb
+// hier zentral normalisieren, statt es jedem Aufrufer zu überlassen.
+function formatiereDatumFeld(datum) {
+  if (datum instanceof Date) return datum.toISOString().slice(0, 10);
+  return typeof datum === 'string' ? datum.slice(0, 10) : datum;
+}
+
 function groupTermineRows(rows) {
   const byId = new Map();
   const order = [];
@@ -51,7 +68,7 @@ function groupTermineRows(rows) {
       termin = {
         id: row.id,
         wochentag: row.wochentag,
-        datum: row.datum,
+        datum: formatiereDatumFeld(row.datum),
         anfangszeit: row.anfangszeit,
         endzeit: row.endzeit,
         raum: { id: row.raum_id, name: row.raum_name, audCode: row.aud_code },
@@ -109,6 +126,22 @@ const SELECT_TERMINE_FUER_KONFLIKTPRUEFUNG_SQL = `
 // PROGRESS.md "Offene Fragen").
 const SELECT_RAUM_PUFFER_SQL = `
   SELECT puffer_minuten FROM raum_puffer WHERE von_raum_id = $1 AND bis_raum_id = $1
+`;
+
+// Ein einzelner Raum per ID (für die Wochentags-Beschränkungsprüfung
+// beim Anlegen/Ändern eines Termins, REFERENCE.md Abschnitt 2, sowie um
+// "Unbekannte raumId" VOR dem Schreiben zu erkennen statt erst über
+// einen Foreign-Key-Fehler beim INSERT).
+const SELECT_RAUM_SQL = `
+  SELECT id, name, aud_code, erlaubte_tage FROM raeume WHERE id = $1
+`;
+
+// ALLE Räume, auch ohne Termin an einem bestimmten Tag (Nachfolger von
+// confRaeume, REFERENCE.md Abschnitt 2) — Grundlage für die
+// Raum-Auswahl in der Terminverwaltung (Phase 8-Vorbereitung: es gab
+// bisher keinen Endpunkt, der Räume unabhängig von Terminen liefert).
+const SELECT_RAEUME_SQL = `
+  SELECT id, name, aud_code, erlaubte_tage FROM raeume ORDER BY name
 `;
 
 const INSERT_TERMIN_SQL = `
@@ -174,6 +207,8 @@ module.exports = {
   SELECT_TERMIN_BY_ID_SQL,
   SELECT_TERMINE_FUER_KONFLIKTPRUEFUNG_SQL,
   SELECT_RAUM_PUFFER_SQL,
+  SELECT_RAUM_SQL,
+  SELECT_RAEUME_SQL,
   INSERT_TERMIN_SQL,
   UPSERT_MUSIKER_SQL,
   INSERT_TERMIN_MUSIKER_SQL,

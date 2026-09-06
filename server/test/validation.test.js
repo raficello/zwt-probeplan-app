@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { timeToMinutes, parseTerminInput, findKonflikte } = require('../validation');
+const { timeToMinutes, parseTerminInput, findKonflikte, raumTagErlaubt } = require('../validation');
 
 function validBody(overrides) {
   return {
@@ -126,4 +126,20 @@ test('findKonflikte: erkennt Konflikte auch mit "HH:MM:SS"-Zeiten aus der Datenb
 test('findKonflikte: wirft bei ungültiger Zeit statt still falsch zu rechnen', () => {
   const bestehend = [{ id: 1, anfangszeit: 'kaputt', endzeit: '10:00', werk: 'A' }];
   assert.throws(() => findKonflikte(bestehend, { anfangszeit: '09:30', endzeit: '11:00' }, 15));
+});
+
+test('raumTagErlaubt: null (keine Beschränkung) erlaubt jeden Wochentag', () => {
+  assert.equal(raumTagErlaubt(null, 'So'), true);
+});
+
+test('raumTagErlaubt: leeres Array (keine Beschränkung) erlaubt jeden Wochentag', () => {
+  assert.equal(raumTagErlaubt([], 'So'), true);
+});
+
+test('raumTagErlaubt: Wochentag in der Liste ist erlaubt', () => {
+  assert.equal(raumTagErlaubt(['Mo', 'Mi', 'Fr'], 'Mi'), true);
+});
+
+test('raumTagErlaubt: Wochentag NICHT in der Liste ist nicht erlaubt', () => {
+  assert.equal(raumTagErlaubt(['Mo', 'Mi', 'Fr'], 'Do'), false);
 });

@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>ZwT Probeplan — Terminverwaltung</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; max-width: 60rem; }
+  h1 { font-size: 1.1rem; margin: 0 0 0.75rem 0; }
+  nav { font-size: 0.9rem; margin-bottom: 0.5rem; }
+  nav a { margin-right: 1rem; }
+  .toolbar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+  .toolbar button { font-size: 1rem; padding: 0.25rem 0.75rem; cursor: pointer; }
+  .toolbar input[type="date"] { font-size: 1rem; padding: 0.25rem; }
+  #status { min-height: 1.2em; margin-bottom: 0.5rem; }
+  #status.fehler { color: #900; }
+  #status.erfolg { color: #067d06; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; font-size: 0.9rem; }
+  th, td { border: 1px solid #ccc; padding: 0.35rem 0.5rem; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+  tr.neu td { background: #ffd9a0; }
+  td.aktionen { white-space: nowrap; }
+  td.aktionen button { font-size: 0.85rem; margin-right: 0.25rem; cursor: pointer; }
+  #terminForm {
+    border: 1px solid #ccc; border-radius: 4px; padding: 1rem; margin-bottom: 1rem;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.75rem;
+    max-width: 55rem;
+  }
+  #terminForm.versteckt { display: none; }
+  #terminForm label { display: flex; flex-direction: column; font-size: 0.85rem; gap: 0.25rem; }
+  #terminForm input, #terminForm select, #terminForm textarea { font-size: 0.95rem; padding: 0.3rem; font-family: inherit; }
+  #terminForm .breit { grid-column: 1 / -1; }
+  #terminForm .aktionen-form { grid-column: 1 / -1; display: flex; gap: 0.5rem; }
+  #wochentagAnzeige { font-size: 0.8rem; color: #555; }
+  #raumHinweis { font-size: 0.8rem; color: #555; }
+  .fehlerliste { color: #900; font-size: 0.85rem; margin: 0.25rem 0 0; padding-left: 1.1rem; }
+  #btnNeuerTermin { margin-bottom: 0.75rem; }
+</style>
+</head>
+<body>
+  <h1>ZwT Probeplan — Terminverwaltung</h1>
+  <nav>
+    <a href="/raumplan.html">Zur Raumplan-Ansicht</a>
+    <a href="/musikerplan.html">Zur Musiker-Ansicht</a>
+  </nav>
+
+  <div class="toolbar">
+    <button id="btnZurueck">&larr; Tag zurück</button>
+    <input type="date" id="datum">
+    <button id="btnVor">Tag vor &rarr;</button>
+    <span id="standInfo" style="font-size:0.85rem;color:#555"></span>
+  </div>
+
+  <div id="status"></div>
+
+  <button id="btnNeuerTermin">+ Neuer Termin</button>
+
+  <form id="terminForm" class="versteckt">
+    <input type="hidden" id="terminId">
+    <label>Datum
+      <input type="date" id="fDatum" required>
+      <span id="wochentagAnzeige"></span>
+    </label>
+    <label>Anfangszeit
+      <input type="time" id="fAnfang" required>
+    </label>
+    <label>Endzeit
+      <input type="time" id="fEnde" required>
+    </label>
+    <label>Raum
+      <select id="fRaum" required></select>
+      <span id="raumHinweis"></span>
+    </label>
+    <label>Typ
+      <select id="fTyp">
+        <option value="">(leer) — normale Probe</option>
+        <option value="GP">GP — Generalprobe</option>
+        <option value="Kzt">Kzt — Konzertzeit-Blockkopf (erscheint bei allen)</option>
+        <option value="K">K — Konzertstück</option>
+        <option value="Klf">Klf</option>
+      </select>
+    </label>
+    <label class="breit">Werk
+      <input type="text" id="fWerk" required placeholder="z.B. Beethoven Sinfonie Nr. 5">
+    </label>
+    <label class="breit" id="fTeilnehmerWrap">Teilnehmer (Kürzel, mit Komma oder Leerzeichen getrennt)
+      <input type="text" id="fTeilnehmer" placeholder="z.B. AB, CD, GH">
+    </label>
+    <label class="breit">Bemerkungen
+      <textarea id="fBemerkungen" rows="2"></textarea>
+    </label>
+    <div class="aktionen-form">
+      <button type="submit" id="btnSpeichern">Anlegen</button>
+      <button type="button" id="btnAbbrechen">Abbrechen</button>
+    </div>
+    <ul class="fehlerliste breit" id="formFehler" hidden></ul>
+  </form>
+
+  <table id="tabelle">
+    <thead>
+      <tr>
+        <th>Zeit</th>
+        <th>Raum</th>
+        <th>Typ</th>
+        <th>Werk</th>
+        <th>Teilnehmer</th>
+        <th>Bemerkungen</th>
+        <th>Aktionen</th>
+      </tr>
+    </thead>
+    <tbody id="tabelleBody"></tbody>
+  </table>
+
+  <script src="/color.js"></script>
+  <script>
+    var statusEl = document.getElementById('status');
+    var datumInput = document.getElementById('datum');
+    var standInfoEl = document.getElementById('standInfo');
+    var formEl = document.getElementById('terminForm');
+    var tabelleBody = document.getElementById('tabelleBody');
+    var formFehlerEl = document.getElementById('formFehler');
+
+    var raeume = []; // { id, name, audCode, erlaubteTage }
+    var aktuelleTermine = [];
+
+    var WOCHENTAG_NACH_JS_TAG = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']; // Date#getDay(): 0=So
+
+    function heutigesDatum() {
+      var d = new Date();
+      return d.toISOString().slice(0, 10);
+    }
+
+    function wochentagVonDatum(datumStr) {
+      var d = new Date(datumStr + 'T00:00:00');
+      return WOCHENTAG_NACH_JS_TAG[d.getDay()];
+    }
+
+    function zeigeStatus(text, art) {
+      statusEl.textContent = text || '';
+      statusEl.className = art || '';
+    }
+
+    function datumVerschieben(deltaTage) {
+      var d = new Date(datumInput.value + 'T00:00:00');
+      d.setDate(d.getDate() + deltaTage);
+      datumInput.value = d.toISOString().slice(0, 10);
+      ladeTag(datumInput.value);
+    }
+
+    function zeigeStand() {
+      fetch('/api/stand')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          standInfoEl.textContent = data.lockedAt
+            ? 'Zuletzt gesperrt: ' + new Date(data.lockedAt).toLocaleString('de-CH')
+            : 'Noch nie gesperrt';
+        })
+        .catch(function () { standInfoEl.textContent = ''; });
+    }
+
+    // Phase 7: Schreiben ist per Basic-Auth-artigem Header geschützt
+    // (siehe raumplan.html für dasselbe Muster). Passwort wird nur einmal
+    // pro Seitenaufruf abgefragt und bei falscher Eingabe verworfen, damit
+    // der nächste Versuch neu fragt.
+    var organisatorPasswort = null;
+    function organisatorAuthHeader() {
+      if (organisatorPasswort === null) {
+        organisatorPasswort = window.prompt('Organisator:innen-Passwort:') || '';
+      }
+      return 'Basic ' + btoa('organisator:' + organisatorPasswort);
+    }
+
+    function raumName(raumId) {
+      var r = raeume.find(function (x) { return x.id === raumId; });
+      return r ? r.name : '(Raum #' + raumId + ')';
+    }
+
+    function fuelleRaumAuswahl() {
+      var select = document.getElementById('fRaum');
+      select.innerHTML = '';
+      raeume.forEach(function (r) {
+        var opt = document.createElement('option');
+        opt.value = r.id;
+        opt.textContent = r.name;
+        select.appendChild(opt);
+      });
+      zeigeRaumHinweis();
+    }
+
+    function zeigeRaumHinweis() {
+      var raumId = Number(document.getElementById('fRaum').value);
+      var r = raeume.find(function (x) { return x.id === raumId; });
+      var hinweisEl = document.getElementById('raumHinweis');
+      if (r && r.erlaubteTage && r.erlaubteTage.length) {
+        hinweisEl.textContent = 'Erlaubt an: ' + r.erlaubteTage.join(', ');
+      } else {
+        hinweisEl.textContent = 'An allen Wochentagen erlaubt';
+      }
+    }
+
+    function zeigeWochentag() {
+      var datum = document.getElementById('fDatum').value;
+      document.getElementById('wochentagAnzeige').textContent = datum
+        ? 'Wochentag: ' + wochentagVonDatum(datum)
+        : '';
+    }
+
+    // Kzt-Sonderregel (REFERENCE.md Abschnitt 3): Teilnehmer bleibt IMMER
+    // leer, unabhängig davon, was eingetragen wäre — Feld deshalb sperren
+    // statt nur zu verstecken, damit klar ist, warum es ignoriert würde.
+    function aktualisiereTeilnehmerFeld() {
+      var typ = document.getElementById('fTyp').value;
+      var teilnehmerInput = document.getElementById('fTeilnehmer');
+      var wrap = document.getElementById('fTeilnehmerWrap');
+      if (typ === 'Kzt') {
+        teilnehmerInput.value = '';
+        teilnehmerInput.disabled = true;
+        wrap.title = 'Bei Typ "Kzt" bleibt Teilnehmer immer leer (Konzertzeit-Blockkopf, erscheint bei jedem Musiker).';
+      } else {
+        teilnehmerInput.disabled = false;
+        wrap.title = '';
+      }
+    }
+
+    function ladeRaeume() {
+      return fetch('/api/raeume')
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(function (data) {
+          raeume = data.raeume;
+          fuelleRaumAuswahl();
+        });
+    }
+
+    function terminZeile(t) {
+      var tr = document.createElement('tr');
+      if (t.neu) tr.className = 'neu';
+
+      var zeit = t.anfangszeit === t.endzeit
+        ? t.anfangszeit.slice(0, 5)
+        : t.anfangszeit.slice(0, 5) + '–' + t.endzeit.slice(0, 5);
+
+      function zelle(text) {
+        var td = document.createElement('td');
+        td.textContent = text || '';
+        return td;
+      }
+
+      tr.appendChild(zelle(zeit));
+      tr.appendChild(zelle(t.raum.name));
+      tr.appendChild(zelle(t.typ || '—'));
+      tr.appendChild(zelle(t.werk));
+      tr.appendChild(zelle(t.teilnehmer.join(', ')));
+      tr.appendChild(zelle(t.bemerkungen));
+
+      var aktionenTd = document.createElement('td');
+      aktionenTd.className = 'aktionen';
+
+      var btnBearbeiten = document.createElement('button');
+      btnBearbeiten.type = 'button';
+      btnBearbeiten.textContent = 'Bearbeiten';
+      btnBearbeiten.addEventListener('click', function () { formularZumBearbeitenOeffnen(t); });
+      aktionenTd.appendChild(btnBearbeiten);
+
+      var btnLoeschen = document.createElement('button');
+      btnLoeschen.type = 'button';
+      btnLoeschen.textContent = 'Löschen';
+      btnLoeschen.addEventListener('click', function () { terminLoeschen(t); });
+      aktionenTd.appendChild(btnLoeschen);
+
+      tr.appendChild(aktionenTd);
+      return tr;
+    }
+
+    function zeichneTabelle() {
+      tabelleBody.innerHTML = '';
+      if (aktuelleTermine.length === 0) {
+        var tr = document.createElement('tr');
+        var td = document.createElement('td');
+        td.colSpan = 7;
+        td.textContent = 'Keine Termine an diesem Tag.';
+        tr.appendChild(td);
+        tabelleBody.appendChild(tr);
+        return;
+      }
+      aktuelleTermine.forEach(function (t) {
+        tabelleBody.appendChild(terminZeile(t));
+      });
+    }
+
+    function ladeTag(datum) {
+      zeigeStatus('Lade...');
+      return fetch('/api/termine?datum=' + encodeURIComponent(datum))
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(function (data) {
+          aktuelleTermine = data.termine;
+          zeichneTabelle();
+          zeigeStatus('');
+        })
+        .catch(function (err) {
+          zeigeStatus('Fehler beim Laden: ' + err.message, 'fehler');
+        });
+    }
+
+    function formularZuruecksetzen() {
+      document.getElementById('terminId').value = '';
+      document.getElementById('fDatum').value = datumInput.value;
+      document.getElementById('fAnfang').value = '';
+      document.getElementById('fEnde').value = '';
+      document.getElementById('fTyp').value = '';
+      document.getElementById('fWerk').value = '';
+      document.getElementById('fTeilnehmer').value = '';
+      document.getElementById('fBemerkungen').value = '';
+      if (raeume.length) document.getElementById('fRaum').value = raeume[0].id;
+      zeigeWochentag();
+      zeigeRaumHinweis();
+      aktualisiereTeilnehmerFeld();
+      formFehlerEl.hidden = true;
+      formFehlerEl.innerHTML = '';
+    }
+
+    function formularOeffnenFuerNeuenTermin() {
+      formularZuruecksetzen();
+      document.getElementById('btnSpeichern').textContent = 'Anlegen';
+      formEl.classList.remove('versteckt');
+      document.getElementById('fWerk').focus();
+    }
+
+    function formularZumBearbeitenOeffnen(t) {
+      document.getElementById('terminId').value = t.id;
+      document.getElementById('fDatum').value = t.datum;
+      document.getElementById('fAnfang').value = t.anfangszeit.slice(0, 5);
+      document.getElementById('fEnde').value = t.endzeit.slice(0, 5);
+      document.getElementById('fRaum').value = t.raum.id;
+      document.getElementById('fTyp').value = t.typ || '';
+      document.getElementById('fWerk').value = t.werk;
+      document.getElementById('fTeilnehmer').value = t.teilnehmer.join(', ');
+      document.getElementById('fBemerkungen').value = t.bemerkungen || '';
+      zeigeWochentag();
+      zeigeRaumHinweis();
+      aktualisiereTeilnehmerFeld();
+      formFehlerEl.hidden = true;
+      formFehlerEl.innerHTML = '';
+      document.getElementById('btnSpeichern').textContent = 'Speichern';
+      formEl.classList.remove('versteckt');
+      document.getElementById('fWerk').focus();
+    }
+
+    function formularSchliessen() {
+      formEl.classList.add('versteckt');
+    }
+
+    function zeigeFormFehler(fehlerListe) {
+      formFehlerEl.innerHTML = '';
+      fehlerListe.forEach(function (f) {
+        var li = document.createElement('li');
+        li.textContent = f;
+        formFehlerEl.appendChild(li);
+      });
+      formFehlerEl.hidden = fehlerListe.length === 0;
+    }
+
+    function terminAusFormularLesen() {
+      var datum = document.getElementById('fDatum').value;
+      return {
+        wochentag: wochentagVonDatum(datum),
+        datum: datum,
+        anfangszeit: document.getElementById('fAnfang').value,
+        endzeit: document.getElementById('fEnde').value,
+        raumId: Number(document.getElementById('fRaum').value),
+        typ: document.getElementById('fTyp').value,
+        werk: document.getElementById('fWerk').value,
+        bemerkungen: document.getElementById('fBemerkungen').value,
+        teilnehmer: document.getElementById('fTeilnehmer').value
+          .split(/[,\s]+/)
+          .map(function (k) { return k.trim().toUpperCase(); })
+          .filter(Boolean),
+      };
+    }
+
+    function terminSpeichern(ev) {
+      ev.preventDefault();
+      var terminId = document.getElementById('terminId').value;
+      var body = terminAusFormularLesen();
+      var istNeu = !terminId;
+      var url = istNeu ? '/api/termine' : '/api/termine/' + terminId;
+      var methode = istNeu ? 'POST' : 'PUT';
+
+      fetch(url, {
+        method: methode,
+        headers: { 'Content-Type': 'application/json', Authorization: organisatorAuthHeader() },
+        body: JSON.stringify(body),
+      })
+        .then(function (res) {
+          if (res.status === 401) {
+            organisatorPasswort = null;
+            return res.json().then(function () {
+              throw new Error('Falsches Passwort — bitte "' + (istNeu ? 'Anlegen' : 'Speichern') + '" erneut klicken');
+            });
+          }
+          if (res.status === 503) {
+            return res.json().then(function (b) { throw new Error(b.message); });
+          }
+          if (res.status === 400 || res.status === 409) {
+            return res.json().then(function (b) {
+              zeigeFormFehler(b.errors || b.konflikte || [b.message]);
+              throw new Error('__ANGEZEIGT__');
+            });
+          }
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(function () {
+          formularSchliessen();
+          datumInput.value = body.datum;
+          // WICHTIG: erst NACH dem Neuladen die Erfolgsmeldung setzen —
+          // ladeTag() setzt #status selbst (zuerst "Lade...", am Ende
+          // wieder leer), ein vorher gesetzter Text würde sonst sofort
+          // überschrieben (per echtem Browser-Test gefunden).
+          return ladeTag(body.datum);
+        })
+        .then(function () {
+          zeigeStatus(istNeu ? 'Termin angelegt.' : 'Termin gespeichert.', 'erfolg');
+        })
+        .catch(function (err) {
+          if (err.message === '__ANGEZEIGT__') return; // Fehler stehen schon im Formular
+          zeigeStatus(err.message, 'fehler');
+        });
+    }
+
+    function terminLoeschen(t) {
+      if (!confirm('Termin "' + t.werk + '" (' + t.anfangszeit.slice(0, 5) + ') wirklich löschen?')) return;
+      fetch('/api/termine/' + t.id, {
+        method: 'DELETE',
+        headers: { Authorization: organisatorAuthHeader() },
+      })
+        .then(function (res) {
+          if (res.status === 401) {
+            organisatorPasswort = null;
+            throw new Error('Falsches Passwort — bitte erneut versuchen');
+          }
+          if (res.status === 503) {
+            return res.json().then(function (b) { throw new Error(b.message); });
+          }
+          if (!res.ok && res.status !== 204) throw new Error('HTTP ' + res.status);
+        })
+        .then(function () {
+          return ladeTag(datumInput.value);
+        })
+        .then(function () {
+          zeigeStatus('Termin gelöscht.', 'erfolg');
+        })
+        .catch(function (err) {
+          zeigeStatus(err.message, 'fehler');
+        });
+    }
+
+    document.getElementById('btnZurueck').addEventListener('click', function () { datumVerschieben(-1); });
+    document.getElementById('btnVor').addEventListener('click', function () { datumVerschieben(1); });
+    datumInput.addEventListener('change', function () { ladeTag(datumInput.value); });
+    document.getElementById('btnNeuerTermin').addEventListener('click', formularOeffnenFuerNeuenTermin);
+    document.getElementById('btnAbbrechen').addEventListener('click', formularSchliessen);
+    document.getElementById('fDatum').addEventListener('change', zeigeWochentag);
+    document.getElementById('fRaum').addEventListener('change', zeigeRaumHinweis);
+    document.getElementById('fTyp').addEventListener('change', aktualisiereTeilnehmerFeld);
+    formEl.addEventListener('submit', terminSpeichern);
+
+    var urlParams = new URLSearchParams(window.location.search);
+    datumInput.value = urlParams.get('datum') || heutigesDatum();
+    zeigeStand();
+    ladeRaeume().then(function () {
+      ladeTag(datumInput.value);
+    });
+  </script>
+</body>
+</html>

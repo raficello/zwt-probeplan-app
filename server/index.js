@@ -12,6 +12,8 @@ const {
   SELECT_TERMIN_BY_ID_SQL,
   SELECT_TERMINE_FUER_KONFLIKTPRUEFUNG_SQL,
   SELECT_RAUM_PUFFER_SQL,
+  SELECT_RAUM_SQL,
+  SELECT_RAEUME_SQL,
   INSERT_TERMIN_SQL,
   UPSERT_MUSIKER_SQL,
   INSERT_TERMIN_MUSIKER_SQL,
@@ -22,7 +24,7 @@ const {
   SELECT_LOCKED_AT_SQL,
   groupTermineRows,
 } = require('./queries');
-const { parseTerminInput, findKonflikte } = require('./validation');
+const { parseTerminInput, findKonflikte, raumTagErlaubt } = require('./validation');
 const { erzeugeGesamtplanPdf, erzeugeMusikerplanPdf, formatiereDatum } = require('./pdf');
 const { pruefeOrganisatorAuth } = require('./auth');
 
@@ -46,8 +48,27 @@ app.get('/favicon.ico', (req, res) => res.status(204).end());
 // Gemeinsame Konfliktprüfung für POST (excludeId=null) und PUT
 // (excludeId=eigene ID, siehe REFERENCE.md Abschnitt 4). Muss innerhalb
 // der aufrufenden Transaktion (client) laufen, damit Prüfung und
-// Schreiben konsistent sind.
+// Schreiben konsistent sind. Prüft ZWEI Dinge: dass die raumId
+// existiert (sonst { raumUnbekannt: true }, damit der Aufrufer VOR dem
+// Schreiben sauber 400 antworten kann statt sich auf den
+// Foreign-Key-Fehler beim INSERT zu verlassen), und — als Teil der
+// zurückgegebenen konflikte-Liste — sowohl die Wochentags-Raumbeschränkung
+// (REFERENCE.md Abschnitt 2, bisher NICHT umgesetzt gewesen, siehe
+// PROGRESS.md) als auch Überschneidungen/Pufferzeiten.
 async function pruefeKonflikte(client, value, excludeId) {
+  const raumResult = await client.query(SELECT_RAUM_SQL, [value.raumId]);
+  const raum = raumResult.rows[0];
+  if (!raum) {
+    return { raumUnbekannt: true };
+  }
+
+  const konflikte = [];
+  if (!raumTagErlaubt(raum.erlaubte_tage, value.wochentag)) {
+    konflikte.push(
+      `Raum "${raum.name}" ist am Wochentag "${value.wochentag}" nicht erlaubt (erlaubte Tage: ${raum.erlaubte_tage.join(', ')})`
+    );
+  }
+
   const bestehendeResult = await client.query(SELECT_TERMINE_FUER_KONFLIKTPRUEFUNG_SQL, [
     value.raumId,
     value.datum,
@@ -55,7 +76,9 @@ async function pruefeKonflikte(client, value, excludeId) {
   ]);
   const pufferResult = await client.query(SELECT_RAUM_PUFFER_SQL, [value.raumId]);
   const pufferMinuten = pufferResult.rows[0]?.puffer_minuten ?? 0;
-  return findKonflikte(bestehendeResult.rows, value, pufferMinuten);
+  konflikte.push(...findKonflikte(bestehendeResult.rows, value, pufferMinuten));
+
+  return { konflikte };
 }
 
 // Ersetzt die Teilnehmer eines Termins komplett (löschen + neu einfügen)
@@ -102,6 +125,30 @@ app.get('/api/termine', async (req, res) => {
   }
 });
 
+// GET /api/raeume — ALLE Räume, auch ohne Termin an einem bestimmten
+// Tag (im Unterschied zu GET /api/termine, das Räume nur implizit über
+// vorhandene Termine liefert). Offen, kein Auth nötig (Lesen). Grundlage
+// für die Raum-Auswahl in der Terminverwaltung (Phase 8) — vorher gab
+// es dafür keinen Endpunkt (siehe PROGRESS.md "Bekannte Einschränkung").
+app.get('/api/raeume', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  }
+  try {
+    const result = await pool.query(SELECT_RAEUME_SQL);
+    res.json({
+      raeume: result.rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        audCode: r.aud_code,
+        erlaubteTage: r.erlaubte_tage || [],
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
 // POST /api/termine — legt einen neuen Termin an (siehe REFERENCE.md
 // Abschnitt 1/3/4). Erwartet JSON-Body: { wochentag, datum, anfangszeit,
 // endzeit, raumId, typ, werk, bemerkungen, teilnehmer }. Führt VOR dem
@@ -123,10 +170,14 @@ app.post('/api/termine', pruefeOrganisatorAuth, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    const konflikte = await pruefeKonflikte(client, value, null);
-    if (konflikte.length) {
+    const pruefung = await pruefeKonflikte(client, value, null);
+    if (pruefung.raumUnbekannt) {
       await client.query('ROLLBACK');
-      return res.status(409).json({ status: 'error', message: 'Terminkonflikt', konflikte });
+      return res.status(400).json({ status: 'error', message: `Unbekannte raumId: ${value.raumId}` });
+    }
+    if (pruefung.konflikte.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ status: 'error', message: 'Terminkonflikt', konflikte: pruefung.konflikte });
     }
 
     const insertResult = await client.query(INSERT_TERMIN_SQL, [
@@ -181,10 +232,14 @@ app.put('/api/termine/:id', pruefeOrganisatorAuth, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    const konflikte = await pruefeKonflikte(client, value, id);
-    if (konflikte.length) {
+    const pruefung = await pruefeKonflikte(client, value, id);
+    if (pruefung.raumUnbekannt) {
       await client.query('ROLLBACK');
-      return res.status(409).json({ status: 'error', message: 'Terminkonflikt', konflikte });
+      return res.status(400).json({ status: 'error', message: `Unbekannte raumId: ${value.raumId}` });
+    }
+    if (pruefung.konflikte.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ status: 'error', message: 'Terminkonflikt', konflikte: pruefung.konflikte });
     }
 
     const updateResult = await client.query(UPDATE_TERMIN_SQL, [
@@ -330,6 +385,15 @@ app.get('/api/pdf/musikerplan', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`zwt-probeplan-server (Platzhalter) läuft auf Port ${port}`);
-});
+// `app` exportieren, damit server/test/index.test.js echte HTTP-Requests
+// gegen eine im Test gestartete Instanz schicken kann (statt nur Mocks),
+// ohne dass beim einfachen `require('./index')` gleich ein echter Port
+// belegt wird. Im Produktivbetrieb (`node index.js`) bleibt das
+// Verhalten unverändert.
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`zwt-probeplan-server (Platzhalter) läuft auf Port ${port}`);
+  });
+}
+
+module.exports = app;

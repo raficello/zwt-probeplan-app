@@ -58,3 +58,19 @@ test('groupTermineRows: mehrere unterschiedliche Termine bleiben getrennt und in
 test('groupTermineRows: leere Eingabe ergibt leeres Array', () => {
   assert.deepEqual(groupTermineRows([]), []);
 });
+
+test('groupTermineRows: datum als JS-Date-Objekt (wie es node-postgres für "date"-Spalten liefert) wird zu "YYYY-MM-DD" normalisiert (Regressionstest)', () => {
+  // Bug-Nachbau: node-postgres liefert `date`-Spalten als Date-Objekt
+  // (Mitternacht UTC). JSON.stringify macht daraus einen vollen
+  // ISO-Zeitstempel ("2026-09-07T00:00:00.000Z"), was ein <input
+  // type="date"> in der Terminverwaltung (Phase 8) leer liess, weil das
+  // Feld nur "YYYY-MM-DD" akzeptiert (per echtem Browser-Test gefunden).
+  const rows = [makeRow({ datum: new Date('2026-09-07T00:00:00.000Z') })];
+  const termine = groupTermineRows(rows);
+  assert.equal(termine[0].datum, '2026-09-07');
+});
+
+test('groupTermineRows: datum als String bleibt unverändert (schon "YYYY-MM-DD")', () => {
+  const termine = groupTermineRows([makeRow({ datum: '2026-09-07' })]);
+  assert.equal(termine[0].datum, '2026-09-07');
+});
