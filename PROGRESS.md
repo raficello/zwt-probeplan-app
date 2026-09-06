@@ -102,8 +102,22 @@ Downloads bei ihm nicht zuverlässig im normalen Downloads-Ordner landen
 - vis-timeline statt FullCalendar (MIT-Lizenz vs. Premium-Plugin).
 - Aud (Spalte D) vs. Ort (Spalte I) im Master-Sheet ungeklärt — vorläufig
   zwei unabhängige Felder auf `raeume`.
-- Pufferzeiten-Matrix-Quelle nicht lokalisiert — Default 0 Min.
-- Kein echter Sheet-Export vorhanden — Migration nutzt Beispieldaten.
+- **Pufferzeiten-Matrix-Quelle gefunden** (06.09.2026, Tab "Config" des
+  Google Sheets), in `db/seed-raeume.sql` eingetragen — noch NICHT auf
+  dem VPS angewendet (Rafi muss das Skript ausführen). Dabei entdeckt:
+  die Konfliktprüfung wertet die Matrix nicht raumübergreifend aus
+  (fragt nur denselben Raum ab) — mit den echten, fast durchweg
+  nichtleeren Werten wirkt sich das so aus, dass praktisch nie ein
+  Pufferzeit-Konflikt gemeldet wird. Muss nachgezogen werden
+  (REFERENCE.md Abschnitt 2), kein Blocker für den Testlauf.
+- Festival-Tage 2026 bekannt (06.09.2026, aus Google Sheet): Mo.
+  12.10.2026 bis So. 18.10.2026. In `admin.html` als Datums-Auswahlliste
+  hinterlegt (fest im Code, keine Server-Quelle dafür — bei Bedarf
+  später aus der DB oder Config ableiten).
+- Kein echter Sheet-Export für die Migration (`migrate/`) vorhanden —
+  nutzt weiterhin Beispieldaten. Google-Sheet-Zugriff via Google-Drive-
+  Connector ist inzwischen möglich (06.09.2026, siehe oben) — bei Bedarf
+  künftig direkt daraus exportieren statt manuell.
 - Unbekannte Raumnamen im Export: Warnung + Auto-Raum statt Abbruch.
 - Backup-Ziel noch nicht bestellt.
 - `git push` schlägt mit 403 fehl — Repo-Autorisierung fehlt für diese
@@ -114,6 +128,15 @@ Downloads bei ihm nicht zuverlässig im normalen Downloads-Ordner landen
   ein funktionierender Rettungsweg (siehe oben).
 - `update_trigger`s "exceeds maximum allowed tokens"-Fehler bedeutet
   NICHT, dass das Update fehlschlug — siehe oben.
+- **Neue Funktion angefragt (06.09.2026, Rafi-Feedback beim Testen)**:
+  Werk-Feld in `admin.html` soll per Nummer (z.B. "401" = Konzert 4,
+  Werk 1) oder Namensanfang autovervollständigt werden, aus einer
+  "Konzertliste"; ausgewähltes Werk soll die Teilnehmer vorschlagen
+  (änderbar). Diese Werkliste/Nummerierung wurde im Google Sheet noch
+  nicht gefunden (die Config-Tab-Suche fand nur Räume+Pufferzeiten+
+  Tage, nicht die Werk-Nummerierung) — mit Rafi klären, wo genau diese
+  Liste im Sheet steht bzw. ob sie neu angelegt werden muss. Bisher rein
+  konzeptionell, keine Umsetzung begonnen.
 
 ## Letzte Sicherung (ZIP an Nutzer per SendUserFile)
 - 03.09.2026, 04.09.2026; danach unregelmässig während Tagsitzungen.

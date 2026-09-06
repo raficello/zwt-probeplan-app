@@ -29,12 +29,28 @@ Termine.
 
 ## 2. Konfiguration
 
-- Sheet "confRaeume": Spalte A = Raumliste, Spalte N = erlaubte Tage
-  (`"Mo-Mi"`, `"Do-So"`, `"Mo,Mi,Fr"`, leer=alle Tage; Codes Mo-So). War
-  durchgesetzt seit Phase 8 (`raeume.erlaubte_tage`, `raumTagErlaubt()` in
-  `server/validation.js`). Code wiederhergestellt (06.09.2026, Rafis zweitem ZIP), läuft produktiv.
-- Pufferzeiten-Matrix ("roomIntervals"): Minuten Puffer zwischen Terminen
-  im selben Raum. Sheet-Quelle nie abschliessend lokalisiert (unklar).
+- Sheet "confRaeume" (jetzt bestätigt: Tab **"Config"** im Google Sheet,
+  benannte Bereiche `conf_raume`/`conf_intervals`): Spalte A = Raumliste,
+  Spalte N = erlaubte Tage (`"Mo-Mi"`, `"Do-So"`, `"Mo,Mi,Fr"`, leer=alle
+  Tage; Codes Mo-So). War durchgesetzt seit Phase 8 (`raeume.erlaubte_tage`,
+  `raumTagErlaubt()` in `server/validation.js`). Code wiederhergestellt
+  (06.09.2026, Rafis zweitem ZIP), läuft produktiv. Echte Raumliste (12
+  Räume, Stand 06.09.2026 aus dem Config-Tab ausgelesen) + erlaubte Tage +
+  Pufferzeiten in `db/seed-raeume.sql` — war vorher nie in die
+  Produktions-DB eingespielt, deshalb leere Raumliste in `admin.html`.
+- Pufferzeiten-Matrix ("roomIntervals"): Minuten Puffer beim Raumwechsel
+  zwischen zwei Räumen (12×12-Matrix, symmetrisch, Diagonale=0). **Quelle
+  jetzt gefunden** (06.09.2026): derselbe Config-Tab, benannter Bereich
+  `conf_intervals`, direkt neben `conf_raume`. Werte in `db/seed-raeume.sql`
+  eingetragen. **Wichtige Lücke entdeckt**: die aktuelle Konfliktprüfung
+  (`SELECT_RAUM_PUFFER_SQL` in `server/queries.js`) fragt `raum_puffer`
+  nur mit `von_raum_id = bis_raum_id` ab (derselbe Raum) — die Matrix ist
+  aber für unterschiedliche Raumpaare gedacht (Wegzeit zwischen zwei
+  verschiedenen Räumen für dieselbe Person). Diese raumübergreifende Logik
+  fehlt in der Implementierung noch komplett; mit den echten Daten (kaum
+  eine Null auf der Diagonale ausser sich selbst) wirkt sich das aktuell
+  so aus, dass praktisch NIE ein Pufferzeit-Konflikt gemeldet wird. Noch
+  nicht behoben, siehe PROGRESS.md "Offene Fragen".
 
 ## 3. Termin-Typen
 
