@@ -474,9 +474,15 @@ nicht-existierender).
 ### Frontend
 
 `admin.html`, `raumplan.html`, `musikerplan.html` haben je ein
-Jahres-Dropdown (`#saisonAuswahl`, befüllt aus `GET /api/saisons`) in
-der Toolbar. Default-Auswahl: `?saison=`-URL-Parameter falls gültig,
-sonst die aktive Saison, sonst die erste in der Liste. Bei einer
+Jahres-Dropdown (`#saisonAuswahl`, befüllt aus `GET /api/saisons`) —
+seit Rafi-Feedback vom selben Tag ("den Saison-Wähler oben neben den
+Titel machen") in einer eigenen `.kopfzeile` direkt neben dem `<h1>`,
+nicht mehr in der Toolbar. In `admin.html` ist der Wähler bewusst
+AUSSERHALB von `#hauptinhalt` platziert und wird schon vor dem Login
+geladen/verdrahtet (Lesen ist ja ohnehin offen) — nur die
+"Saison-Verwaltung…" selbst (Schreib-Aktionen) bleibt hinter dem
+Login. Default-Auswahl: `?saison=`-URL-Parameter falls gültig, sonst
+die aktive Saison, sonst die erste in der Liste. Bei einer
 nicht-aktiven Saison: gelbes Banner "Diese Saison ist nicht aktiv
 (Archiv oder noch nicht gestartet) — nur lesbar" UND die
 Schreib-Bedienelemente werden ausgeblendet (`admin.html`:
@@ -485,30 +491,60 @@ Schreib-Bedienelemente werden ausgeblendet (`admin.html`:
 der Server erzwingt dieselbe Regel nochmal (siehe oben), ein direkter
 API-Aufruf ohne UI bekommt trotzdem 403.
 
-`admin.html` hat zusätzlich einen "Saison-Verwaltung…"-Bereich
-(auf-/zuklappbar): neue Saison anlegen (Jahr + Bezeichnung, startet
-LEER und inaktiv) und die im Dropdown gewählte Saison aktivieren
-(schaltet alle anderen automatisch auf inaktiv/nur lesbar).
+`admin.html` hat einen "Saison-Verwaltung…"-Bereich (auf-/zuklappbar):
+neue Saison anlegen (Jahr + Bezeichnung, startet LEER und inaktiv),
+die im Dropdown gewählte Saison aktivieren (schaltet alle anderen
+automatisch auf inaktiv/nur lesbar) — UND (Rafi-Feedback, selber Tag:
+"Dann die Raumliste, Musikerliste, Konzertliste, Werkeliste steuern",
+"und dort keine Termine anzeigen") vier Tabs mit CRUD-Listen für
+Räume/Musiker:innen/Konzerte/Werke DER GEWÄHLTEN SAISON — bewusst
+GETRENNT von der normalen Tagesansicht darunter, hier stehen nur
+Stammdaten, keine Termine. Jede Zeile ist direkt inline editierbar
+(Eingabefelder + "Speichern"/"Löschen"), darunter eine "+"-Zeile zum
+Neuanlegen. Werke zeigen zusätzlich ein Konzert-Dropdown und ein
+Teilnehmer-Textfeld (Kürzel, kommagetrennt — gleiches Muster wie das
+Teilnehmer-Feld bei Terminen, inkl. automatischem Anlegen unbekannter
+Kürzel). Alle vier Listen sind bei einer nicht-aktiven Saison ebenfalls
+nur lesbar (Speichern/Löschen-Buttons werden dann gar nicht erst
+gerendert, siehe `stammdatenAktionsZelle()`).
 
-**Bewusst NICHT gebaut** (Scope-Entscheidung wegen Nähe zum Festival,
-12.–18.10.2026): eigene CRUD-Oberflächen für Räume/Musiker:innen/
-Konzerte/Werke einer neuen Saison. Stattdessen bleibt das bestehende
-Muster: Rafi liefert die Daten (z.B. Excel-Export), eine Sitzung
-generiert daraus ein Seed-SQL-Skript (analog zu
-`db/seed-raeume.sql`/`db/seed-werke-2026.sql`, mit
-`saison_id = (SELECT id FROM saisons WHERE jahr = <neues Jahr>)`), das
-dann einmalig auf dem VPS ausgeführt wird. Falls künftig doch eine
-Web-Oberfläche dafür gewünscht ist, wäre das ein eigenes, separat zu
-planendes Vorhaben.
+Löschen ist mit Bedacht gebaut, nicht einfach mit CASCADE durchgereicht:
+Räume können nicht gelöscht werden, solange ein Termin darauf verweist
+(`termine.raum_id` hat kein `ON DELETE CASCADE`, der natürliche
+FK-Fehler 23503 wird in eine verständliche 409 übersetzt). Musiker:innen
+und Konzerte hingegen HÄNGEN an Tabellen mit `ON DELETE CASCADE`
+(`termin_musiker`/`werk_musiker`/`werk_vorlage_musiker` bzw. `werke`) —
+ein Löschen dort würde SONST unbemerkt Teilnahme-Einträge bzw. ganze
+Werklisten mitreissen. Deshalb dort ein bewusster Vorab-Zähl-Check
+(`ZAEHLE_MUSIKER_VERWENDUNG_SQL`/`ZAEHLE_WERKE_IM_KONZERT_SQL`) VOR dem
+DELETE, mit klarer 409-Fehlermeldung statt stillem Datenverlust. Werke
+selbst haben keine solche Falle (Termine referenzieren Werke nur als
+freien Text, kein Fremdschlüssel) — Löschen ist dort immer gefahrlos.
+
+Für die Mehrfachauswahl-Liste in `musikerplan.html` (Rafi-Feedback:
+"Könnte das Musiker-Kürzel Feld eine Liste haben mit Mehrfachauswahl,
+Kürzel und Vollnamen", "Wenn ich Musiker neu wähle, sollte es neu
+laden") wurde das bisherige freie Text-Eingabefeld durch
+`<select id="kuerzel" multiple>` ersetzt, befüllt aus `GET
+/api/musiker` (Format je Option: "Kürzel — Vollname", ohne Vollname
+nur "Kürzel"). `change`-Event (nicht mehr `input`) löst das Neuladen
+aus. Bewusst KEIN `.toUpperCase()` mehr auf die Auswahl (anders als
+vorher) — die Options-Werte kommen exakt so aus der Datenbank, manche
+Kürzel im Bestand sind bewusst gemischt geschrieben (z.B. "MEh").
 
 ### Verifikation
 
-Vollständig end-to-end getestet: 12 neue automatisierte Tests
+Vollständig end-to-end getestet: 18 neue automatisierte Tests
 (`server/test/index.test.js`, u.a. Saison anlegen bleibt inaktiv,
 Aktivieren schaltet alte Saison automatisch auf inaktiv, PUT/DELETE/
-POST auf inaktiver Saison → 403, Lesen bleibt möglich), ausserdem
-manuell per echtem Postgres + Playwright-Browser: neue Saison 2027
-anlegen → leer (keine Räume) → aktivieren → 2026 wird automatisch
+POST auf inaktiver Saison → 403, Lesen bleibt möglich, Räume-/
+Musiker-/Konzerte-/Werke-CRUD inkl. Teilnehmer, Lösch-Blockade bei
+Verwendung), ausserdem manuell per echtem Postgres + Playwright-Browser:
+neue Saison 2027 anlegen → leer → aktivieren → 2026 wird automatisch
 Archiv-Banner+gesperrte Buttons in `admin.html` UND `raumplan.html`,
 alter 2026-Termin bleibt lesbar, direkter API-Schreibversuch auf 2026
-liefert 403.
+liefert 403; ausserdem Raum/Musiker:in/Konzert/Werk (inkl. Teilnehmer)
+über die neue Verwaltungsoberfläche angelegt, bearbeitet und wieder
+gelöscht, neu angelegtes Werk sofort im bestehenden Werk-Autocomplete
+nutzbar bestätigt, Lösch-Blockade bei referenzierter Person per
+409-Meldung in der Oberfläche sichtbar bestätigt.

@@ -20,6 +20,7 @@ const {
   SELECT_RAUM_PUFFER_SQL,
   SELECT_RAUM_SQL,
   SELECT_RAEUME_SQL,
+  SELECT_MUSIKER_SQL,
   INSERT_TERMIN_SQL,
   UPSERT_MUSIKER_SQL,
   INSERT_TERMIN_MUSIKER_SQL,
@@ -31,6 +32,29 @@ const {
   SELECT_LOCKED_AT_SQL,
   SELECT_WERK_VORSCHLAEGE_SQL,
   groupTermineRows,
+  INSERT_RAUM_SQL,
+  UPDATE_RAUM_SQL,
+  DELETE_RAUM_SQL,
+  INSERT_MUSIKER_MIT_NAME_SQL,
+  UPDATE_MUSIKER_SQL,
+  ZAEHLE_MUSIKER_VERWENDUNG_SQL,
+  DELETE_MUSIKER_SQL,
+  SELECT_KONZERTE_SQL,
+  INSERT_KONZERT_SQL,
+  UPDATE_KONZERT_SQL,
+  ZAEHLE_WERKE_IM_KONZERT_SQL,
+  DELETE_KONZERT_SQL,
+  SELECT_WERKE_SQL,
+  INSERT_WERK_SQL,
+  UPDATE_WERK_SQL,
+  DELETE_WERK_MUSIKER_SQL,
+  INSERT_WERK_MUSIKER_SQL,
+  DELETE_WERK_SQL,
+  SELECT_KONZERT_SQL,
+  SELECT_RAUM_SAISON_SQL,
+  SELECT_MUSIKER_SAISON_SQL,
+  SELECT_KONZERT_SAISON_SQL,
+  SELECT_WERK_SAISON_SQL,
 } = require('./queries');
 const { parseTerminInput, findKonflikte, raumTagErlaubt } = require('./validation');
 const { erzeugeGesamtplanPdf, erzeugeMusikerplanPdf, formatiereDatum } = require('./pdf');
@@ -279,6 +303,27 @@ app.get('/api/raeume', async (req, res) => {
   }
 });
 
+// GET /api/musiker — ALLE Musiker:innen EINER Saison (Kürzel + Vollname,
+// falls bekannt). Grundlage für die Mehrfachauswahl-Liste in
+// musikerplan.html (Rafi-Feedback, 07.09.2026: "Kürzel und Vollnamen",
+// "Mehrfachauswahl"). Offen, kein Auth nötig (Lesen, wie GET /api/raeume).
+// Optional ?saison=<Jahr>, siehe GET /api/termine.
+app.get('/api/musiker', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  }
+  const saison = await resolveSaison(pool, req.query.saison);
+  if (!saison) {
+    return res.status(400).json({ status: 'error', message: 'Unbekannte Saison oder keine Saison aktiv' });
+  }
+  try {
+    const result = await pool.query(SELECT_MUSIKER_SQL, [saison.id]);
+    res.json({ musiker: result.rows.map((m) => ({ id: m.id, kuerzel: m.kuerzel, name: m.name })) });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
 // GET /api/werke/vorschlaege?q=<Text> — Autocomplete für das Werk-Feld
 // in der Terminverwaltung (Phase 8-Erweiterung, Rafi-Feedback 06.09.2026,
 // siehe REFERENCE.md Abschnitt 16): sucht sowohl Konzertstücke (z.B.
@@ -310,6 +355,452 @@ app.get('/api/werke/vorschlaege', async (req, res) => {
         teilnehmer: r.teilnehmer || [],
       })),
     });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// ---- Saison-Verwaltung: Stammdaten (Rafi-Feedback, 07.09.2026:
+// "Dann die Raumliste, Musikerliste, Konzertliste, Werkeliste
+// steuern") ----
+// Räume/Musiker:innen/Konzerte/Werke lassen sich jetzt direkt in der
+// Oberfläche pflegen statt nur per SQL-Seed-Skript. Gleiches Muster wie
+// bei Terminen: Schreiben ist per Passwort geschützt UND geht nur,
+// solange die betroffene Saison aktiv ist (403 sonst, siehe
+// saisonArchiviertFehler oben); beim Bearbeiten/Löschen wird die Saison
+// IMMER von der bestehenden Zeile selbst abgelesen (nie aus
+// ?saison=), beim Neuanlegen aus ?saison= (Default: aktive Saison).
+
+// -- Räume --
+app.post('/api/raeume', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+  const audCode = typeof req.body.audCode === 'string' && req.body.audCode.trim() ? req.body.audCode.trim() : null;
+  const erlaubteTage = Array.isArray(req.body.erlaubteTage) && req.body.erlaubteTage.length ? req.body.erlaubteTage : null;
+  if (!name) return res.status(400).json({ status: 'error', message: 'name darf nicht leer sein' });
+
+  const saison = await resolveSaison(pool, req.query.saison);
+  if (!saison) return res.status(400).json({ status: 'error', message: 'Unbekannte Saison oder keine Saison aktiv' });
+  if (!saison.aktiv) return saisonArchiviertFehler(res, saison.jahr);
+
+  try {
+    const result = await pool.query(INSERT_RAUM_SQL, [name, audCode, erlaubteTage, saison.id]);
+    const r = result.rows[0];
+    res.status(201).json({ raum: { id: r.id, name: r.name, audCode: r.aud_code, erlaubteTage: r.erlaubte_tage || [] } });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ status: 'error', message: `Raum "${name}" existiert bereits in dieser Saison` });
+    }
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+app.put('/api/raeume/:id', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Ungültige Raum-ID' });
+  const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+  const audCode = typeof req.body.audCode === 'string' && req.body.audCode.trim() ? req.body.audCode.trim() : null;
+  const erlaubteTage = Array.isArray(req.body.erlaubteTage) && req.body.erlaubteTage.length ? req.body.erlaubteTage : null;
+  if (!name) return res.status(400).json({ status: 'error', message: 'name darf nicht leer sein' });
+
+  try {
+    const saisonResult = await pool.query(SELECT_RAUM_SAISON_SQL, [id]);
+    const raumSaison = saisonResult.rows[0];
+    if (!raumSaison) return res.status(404).json({ status: 'error', message: `Raum #${id} nicht gefunden` });
+    if (!raumSaison.aktiv) return saisonArchiviertFehler(res);
+
+    const result = await pool.query(UPDATE_RAUM_SQL, [name, audCode, erlaubteTage, id, raumSaison.saison_id]);
+    if (result.rows.length === 0) return res.status(404).json({ status: 'error', message: `Raum #${id} nicht gefunden` });
+    const r = result.rows[0];
+    res.json({ raum: { id: r.id, name: r.name, audCode: r.aud_code, erlaubteTage: r.erlaubte_tage || [] } });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ status: 'error', message: `Raum "${name}" existiert bereits in dieser Saison` });
+    }
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// Ein Raum wird nur gelöscht, wenn kein Termin (mehr) darauf verweist
+// -- `termine.raum_id` hat KEIN ON DELETE CASCADE, ein Löschversuch mit
+// bestehenden Terminen wirft deshalb von selbst einen FK-Fehler (23503),
+// den wir hier in eine verständliche 409 übersetzen.
+app.delete('/api/raeume/:id', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Ungültige Raum-ID' });
+  try {
+    const saisonResult = await pool.query(SELECT_RAUM_SAISON_SQL, [id]);
+    const raumSaison = saisonResult.rows[0];
+    if (!raumSaison) return res.status(404).json({ status: 'error', message: `Raum #${id} nicht gefunden` });
+    if (!raumSaison.aktiv) return saisonArchiviertFehler(res);
+
+    const result = await pool.query(DELETE_RAUM_SQL, [id, raumSaison.saison_id]);
+    if (result.rows.length === 0) return res.status(404).json({ status: 'error', message: `Raum #${id} nicht gefunden` });
+    res.status(204).end();
+  } catch (err) {
+    if (err.code === '23503') {
+      return res
+        .status(409)
+        .json({ status: 'error', message: 'Dieser Raum wird noch von mindestens einem Termin verwendet — zuerst diese Termine löschen oder verschieben.' });
+    }
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// -- Musiker:innen --
+app.post('/api/musiker', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const kuerzel = typeof req.body.kuerzel === 'string' ? req.body.kuerzel.trim() : '';
+  const name = typeof req.body.name === 'string' && req.body.name.trim() ? req.body.name.trim() : null;
+  if (!kuerzel) return res.status(400).json({ status: 'error', message: 'kuerzel darf nicht leer sein' });
+
+  const saison = await resolveSaison(pool, req.query.saison);
+  if (!saison) return res.status(400).json({ status: 'error', message: 'Unbekannte Saison oder keine Saison aktiv' });
+  if (!saison.aktiv) return saisonArchiviertFehler(res, saison.jahr);
+
+  try {
+    const result = await pool.query(INSERT_MUSIKER_MIT_NAME_SQL, [kuerzel, name, saison.id]);
+    const m = result.rows[0];
+    res.status(201).json({ musiker: { id: m.id, kuerzel: m.kuerzel, name: m.name } });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ status: 'error', message: `Kürzel "${kuerzel}" existiert bereits in dieser Saison` });
+    }
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+app.put('/api/musiker/:id', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Ungültige Musiker-ID' });
+  const kuerzel = typeof req.body.kuerzel === 'string' ? req.body.kuerzel.trim() : '';
+  const name = typeof req.body.name === 'string' && req.body.name.trim() ? req.body.name.trim() : null;
+  if (!kuerzel) return res.status(400).json({ status: 'error', message: 'kuerzel darf nicht leer sein' });
+
+  try {
+    const saisonResult = await pool.query(SELECT_MUSIKER_SAISON_SQL, [id]);
+    const musikerSaison = saisonResult.rows[0];
+    if (!musikerSaison) return res.status(404).json({ status: 'error', message: `Musiker:in #${id} nicht gefunden` });
+    if (!musikerSaison.aktiv) return saisonArchiviertFehler(res);
+
+    const result = await pool.query(UPDATE_MUSIKER_SQL, [kuerzel, name, id, musikerSaison.saison_id]);
+    if (result.rows.length === 0) return res.status(404).json({ status: 'error', message: `Musiker:in #${id} nicht gefunden` });
+    const m = result.rows[0];
+    res.json({ musiker: { id: m.id, kuerzel: m.kuerzel, name: m.name } });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ status: 'error', message: `Kürzel "${kuerzel}" existiert bereits in dieser Saison` });
+    }
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// Musiker:innen-Verknüpfungen (termin_musiker/werk_musiker/
+// werk_vorlage_musiker) haben ALLE ON DELETE CASCADE -- ein Löschen
+// würde also anders als bei Räumen KEINEN Fehler werfen, sondern
+// unbemerkt alle Teilnehmer-Einträge dieser Person überall entfernen.
+// Deshalb hier ein bewusster Vorab-Zähl-Check statt sich auf einen
+// FK-Fehler zu verlassen.
+app.delete('/api/musiker/:id', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Ungültige Musiker-ID' });
+  try {
+    const saisonResult = await pool.query(SELECT_MUSIKER_SAISON_SQL, [id]);
+    const musikerSaison = saisonResult.rows[0];
+    if (!musikerSaison) return res.status(404).json({ status: 'error', message: `Musiker:in #${id} nicht gefunden` });
+    if (!musikerSaison.aktiv) return saisonArchiviertFehler(res);
+
+    const verwendungResult = await pool.query(ZAEHLE_MUSIKER_VERWENDUNG_SQL, [id]);
+    if (Number(verwendungResult.rows[0].anzahl) > 0) {
+      return res.status(409).json({
+        status: 'error',
+        message: 'Diese Person ist noch bei mindestens einem Termin/Werk/Ablaufpunkt als Teilnehmer:in eingetragen — zuerst dort entfernen.',
+      });
+    }
+
+    const result = await pool.query(DELETE_MUSIKER_SQL, [id, musikerSaison.saison_id]);
+    if (result.rows.length === 0) return res.status(404).json({ status: 'error', message: `Musiker:in #${id} nicht gefunden` });
+    res.status(204).end();
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// -- Konzerte --
+app.get('/api/konzerte', async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const saison = await resolveSaison(pool, req.query.saison);
+  if (!saison) return res.status(400).json({ status: 'error', message: 'Unbekannte Saison oder keine Saison aktiv' });
+  try {
+    const result = await pool.query(SELECT_KONZERTE_SQL, [saison.id]);
+    res.json({
+      konzerte: result.rows.map((k) => ({ id: k.id, nummer: k.nummer, name: k.name, dauerMinuten: k.dauer_minuten })),
+    });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+app.post('/api/konzerte', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const nummer = Number(req.body.nummer);
+  const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+  const dauerMinuten = req.body.dauerMinuten === '' || req.body.dauerMinuten == null ? null : Number(req.body.dauerMinuten);
+  if (!Number.isInteger(nummer) || nummer < 0) {
+    return res.status(400).json({ status: 'error', message: 'nummer muss eine nicht-negative Ganzzahl sein' });
+  }
+  if (!name) return res.status(400).json({ status: 'error', message: 'name darf nicht leer sein' });
+  if (dauerMinuten !== null && !Number.isFinite(dauerMinuten)) {
+    return res.status(400).json({ status: 'error', message: 'dauerMinuten muss eine Zahl sein' });
+  }
+
+  const saison = await resolveSaison(pool, req.query.saison);
+  if (!saison) return res.status(400).json({ status: 'error', message: 'Unbekannte Saison oder keine Saison aktiv' });
+  if (!saison.aktiv) return saisonArchiviertFehler(res, saison.jahr);
+
+  try {
+    const result = await pool.query(INSERT_KONZERT_SQL, [nummer, name, dauerMinuten, saison.id]);
+    const k = result.rows[0];
+    res.status(201).json({ konzert: { id: k.id, nummer: k.nummer, name: k.name, dauerMinuten: k.dauer_minuten } });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ status: 'error', message: `Konzert-Nummer ${nummer} existiert bereits in dieser Saison` });
+    }
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+app.put('/api/konzerte/:id', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Ungültige Konzert-ID' });
+  const nummer = Number(req.body.nummer);
+  const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+  const dauerMinuten = req.body.dauerMinuten === '' || req.body.dauerMinuten == null ? null : Number(req.body.dauerMinuten);
+  if (!Number.isInteger(nummer) || nummer < 0) {
+    return res.status(400).json({ status: 'error', message: 'nummer muss eine nicht-negative Ganzzahl sein' });
+  }
+  if (!name) return res.status(400).json({ status: 'error', message: 'name darf nicht leer sein' });
+  if (dauerMinuten !== null && !Number.isFinite(dauerMinuten)) {
+    return res.status(400).json({ status: 'error', message: 'dauerMinuten muss eine Zahl sein' });
+  }
+
+  try {
+    const saisonResult = await pool.query(SELECT_KONZERT_SAISON_SQL, [id]);
+    const konzertSaison = saisonResult.rows[0];
+    if (!konzertSaison) return res.status(404).json({ status: 'error', message: `Konzert #${id} nicht gefunden` });
+    if (!konzertSaison.aktiv) return saisonArchiviertFehler(res);
+
+    const result = await pool.query(UPDATE_KONZERT_SQL, [nummer, name, dauerMinuten, id, konzertSaison.saison_id]);
+    if (result.rows.length === 0) return res.status(404).json({ status: 'error', message: `Konzert #${id} nicht gefunden` });
+    const k = result.rows[0];
+    res.json({ konzert: { id: k.id, nummer: k.nummer, name: k.name, dauerMinuten: k.dauer_minuten } });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ status: 'error', message: `Konzert-Nummer ${nummer} existiert bereits in dieser Saison` });
+    }
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// `werke.konzert_id` hat ON DELETE CASCADE -- ein Löschen würde sonst
+// unbemerkt ALLE Werke dieses Konzerts mitlöschen, deshalb hier
+// derselbe Vorab-Zähl-Check wie bei Musiker:innen.
+app.delete('/api/konzerte/:id', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Ungültige Konzert-ID' });
+  try {
+    const saisonResult = await pool.query(SELECT_KONZERT_SAISON_SQL, [id]);
+    const konzertSaison = saisonResult.rows[0];
+    if (!konzertSaison) return res.status(404).json({ status: 'error', message: `Konzert #${id} nicht gefunden` });
+    if (!konzertSaison.aktiv) return saisonArchiviertFehler(res);
+
+    const werkeResult = await pool.query(ZAEHLE_WERKE_IM_KONZERT_SQL, [id]);
+    if (Number(werkeResult.rows[0].anzahl) > 0) {
+      return res.status(409).json({ status: 'error', message: 'Dieses Konzert hat noch Werke — zuerst diese löschen oder verschieben.' });
+    }
+
+    const result = await pool.query(DELETE_KONZERT_SQL, [id, konzertSaison.saison_id]);
+    if (result.rows.length === 0) return res.status(404).json({ status: 'error', message: `Konzert #${id} nicht gefunden` });
+    res.status(204).end();
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// -- Werke (inkl. Teilnehmer, gleiches Muster wie bei Terminen) --
+async function setzeWerkTeilnehmer(client, werkId, kuerzelListe, saisonId) {
+  await client.query(DELETE_WERK_MUSIKER_SQL, [werkId]);
+  for (const kuerzel of kuerzelListe) {
+    const musikerResult = await client.query(UPSERT_MUSIKER_SQL, [kuerzel, saisonId]);
+    await client.query(INSERT_WERK_MUSIKER_SQL, [werkId, musikerResult.rows[0].id]);
+  }
+}
+
+function parseWerkTeilnehmer(body) {
+  if (!Array.isArray(body.teilnehmer)) return [];
+  return body.teilnehmer.map((k) => String(k).trim()).filter(Boolean);
+}
+
+app.get('/api/werke', async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const saison = await resolveSaison(pool, req.query.saison);
+  if (!saison) return res.status(400).json({ status: 'error', message: 'Unbekannte Saison oder keine Saison aktiv' });
+  try {
+    const result = await pool.query(SELECT_WERKE_SQL, [saison.id]);
+    res.json({
+      werke: result.rows.map((w) => ({
+        id: w.id,
+        nummer: w.nummer,
+        name: w.name,
+        dauerMinuten: w.dauer_minuten,
+        konzertId: w.konzert_id,
+        konzertNummer: w.konzert_nummer,
+        konzertName: w.konzert_name,
+        teilnehmer: w.teilnehmer || [],
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+app.post('/api/werke', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const konzertId = Number(req.body.konzertId);
+  const nummer = Number(req.body.nummer);
+  const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+  const dauerMinuten = req.body.dauerMinuten === '' || req.body.dauerMinuten == null ? null : Number(req.body.dauerMinuten);
+  const teilnehmer = parseWerkTeilnehmer(req.body);
+  if (!Number.isInteger(konzertId) || konzertId <= 0) {
+    return res.status(400).json({ status: 'error', message: 'konzertId muss eine positive Ganzzahl sein' });
+  }
+  if (!Number.isInteger(nummer) || nummer < 0) {
+    return res.status(400).json({ status: 'error', message: 'nummer muss eine nicht-negative Ganzzahl sein' });
+  }
+  if (!name) return res.status(400).json({ status: 'error', message: 'name darf nicht leer sein' });
+  if (dauerMinuten !== null && !Number.isFinite(dauerMinuten)) {
+    return res.status(400).json({ status: 'error', message: 'dauerMinuten muss eine Zahl sein' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const saison = await resolveSaison(client, req.query.saison);
+    if (!saison) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ status: 'error', message: 'Unbekannte Saison oder keine Saison aktiv' });
+    }
+    if (!saison.aktiv) {
+      await client.query('ROLLBACK');
+      return saisonArchiviertFehler(res, saison.jahr);
+    }
+
+    const konzertResult = await client.query(SELECT_KONZERT_SQL, [konzertId]);
+    const konzert = konzertResult.rows[0];
+    if (!konzert || konzert.saison_id !== saison.id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ status: 'error', message: `Unbekannte konzertId: ${konzertId}` });
+    }
+
+    const insertResult = await client.query(INSERT_WERK_SQL, [konzertId, nummer, name, dauerMinuten, saison.id]);
+    const werkId = insertResult.rows[0].id;
+    await setzeWerkTeilnehmer(client, werkId, teilnehmer, saison.id);
+    await client.query('COMMIT');
+    res.status(201).json({ status: 'ok', id: werkId });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23505') {
+      return res.status(400).json({ status: 'error', message: `Werk-Nummer ${nummer} existiert bereits in dieser Saison` });
+    }
+    res.status(500).json({ status: 'error', message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.put('/api/werke/:id', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Ungültige Werk-ID' });
+  const konzertId = Number(req.body.konzertId);
+  const nummer = Number(req.body.nummer);
+  const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+  const dauerMinuten = req.body.dauerMinuten === '' || req.body.dauerMinuten == null ? null : Number(req.body.dauerMinuten);
+  const teilnehmer = parseWerkTeilnehmer(req.body);
+  if (!Number.isInteger(konzertId) || konzertId <= 0) {
+    return res.status(400).json({ status: 'error', message: 'konzertId muss eine positive Ganzzahl sein' });
+  }
+  if (!Number.isInteger(nummer) || nummer < 0) {
+    return res.status(400).json({ status: 'error', message: 'nummer muss eine nicht-negative Ganzzahl sein' });
+  }
+  if (!name) return res.status(400).json({ status: 'error', message: 'name darf nicht leer sein' });
+  if (dauerMinuten !== null && !Number.isFinite(dauerMinuten)) {
+    return res.status(400).json({ status: 'error', message: 'dauerMinuten muss eine Zahl sein' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const werkSaisonResult = await client.query(SELECT_WERK_SAISON_SQL, [id]);
+    const werkSaison = werkSaisonResult.rows[0];
+    if (!werkSaison) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ status: 'error', message: `Werk #${id} nicht gefunden` });
+    }
+    if (!werkSaison.aktiv) {
+      await client.query('ROLLBACK');
+      return saisonArchiviertFehler(res);
+    }
+
+    const konzertResult = await client.query(SELECT_KONZERT_SQL, [konzertId]);
+    const konzert = konzertResult.rows[0];
+    if (!konzert || konzert.saison_id !== werkSaison.saison_id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ status: 'error', message: `Unbekannte konzertId: ${konzertId}` });
+    }
+
+    const updateResult = await client.query(UPDATE_WERK_SQL, [konzertId, nummer, name, dauerMinuten, id, werkSaison.saison_id]);
+    if (updateResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ status: 'error', message: `Werk #${id} nicht gefunden` });
+    }
+    await setzeWerkTeilnehmer(client, id, teilnehmer, werkSaison.saison_id);
+    await client.query('COMMIT');
+    res.json({ status: 'ok' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23505') {
+      return res.status(400).json({ status: 'error', message: `Werk-Nummer ${nummer} existiert bereits in dieser Saison` });
+    }
+    res.status(500).json({ status: 'error', message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Ein Werk hat (anders als Räume/Musiker/Konzerte) keine abhängigen
+// Zeilen ausserhalb seiner eigenen werk_musiker-Verknüpfungen (Termine
+// referenzieren Werke nur als freien Text, keine Fremdschlüssel) --
+// Löschen ist deshalb immer gefahrlos möglich.
+app.delete('/api/werke/:id', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Ungültige Werk-ID' });
+  try {
+    const saisonResult = await pool.query(SELECT_WERK_SAISON_SQL, [id]);
+    const werkSaison = saisonResult.rows[0];
+    if (!werkSaison) return res.status(404).json({ status: 'error', message: `Werk #${id} nicht gefunden` });
+    if (!werkSaison.aktiv) return saisonArchiviertFehler(res);
+
+    const result = await pool.query(DELETE_WERK_SQL, [id, werkSaison.saison_id]);
+    if (result.rows.length === 0) return res.status(404).json({ status: 'error', message: `Werk #${id} nicht gefunden` });
+    res.status(204).end();
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message });
   }

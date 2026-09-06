@@ -375,3 +375,164 @@ test('Saison-Aktivierung + Archiv-Schreibsperre: archivierte Saison kann nicht m
     await pool.query('DELETE FROM saisons WHERE jahr = 2093');
   }
 });
+
+// Stammdaten-CRUD (Rafi-Feedback, 07.09.2026: "Raumliste, Musikerliste,
+// Konzertliste, Werkeliste steuern"). Läuft in der Test-Saison 2091
+// (siehe test.before oben).
+
+test('Räume-CRUD: anlegen, ändern, löschen', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  await frischerZustand();
+
+  const angelegt = await fetch(`${baseUrl}/api/raeume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify({ name: 'Testraum', erlaubteTage: ['Mo', 'Fr'] }),
+  });
+  assert.equal(angelegt.status, 201);
+  const { raum } = await angelegt.json();
+  assert.equal(raum.name, 'Testraum');
+  assert.deepEqual(raum.erlaubteTage, ['Mo', 'Fr']);
+
+  const geaendert = await fetch(`${baseUrl}/api/raeume/${raum.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify({ name: 'Testraum umbenannt', erlaubteTage: [] }),
+  });
+  assert.equal(geaendert.status, 200);
+  assert.equal((await geaendert.json()).raum.name, 'Testraum umbenannt');
+
+  const geloescht = await fetch(`${baseUrl}/api/raeume/${raum.id}`, { method: 'DELETE', headers: { Authorization: ORG_AUTH } });
+  assert.equal(geloescht.status, 204);
+});
+
+test('Räume-CRUD: Löschen mit bestehendem Termin -> 409, nicht gelöscht', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  const { kursaalId } = await frischerZustand();
+
+  const angelegt = await fetch(`${baseUrl}/api/termine`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify(terminBody({ raumId: kursaalId })),
+  });
+  assert.equal(angelegt.status, 201);
+
+  const res = await fetch(`${baseUrl}/api/raeume/${kursaalId}`, { method: 'DELETE', headers: { Authorization: ORG_AUTH } });
+  assert.equal(res.status, 409);
+
+  const nochDa = await pool.query('SELECT id FROM raeume WHERE id = $1', [kursaalId]);
+  assert.equal(nochDa.rows.length, 1);
+});
+
+test('Musiker-CRUD: anlegen, ändern, löschen', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  await frischerZustand();
+
+  const angelegt = await fetch(`${baseUrl}/api/musiker`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify({ kuerzel: 'ZZ', name: 'Zora Zeugin' }),
+  });
+  assert.equal(angelegt.status, 201);
+  const { musiker } = await angelegt.json();
+  assert.equal(musiker.kuerzel, 'ZZ');
+  assert.equal(musiker.name, 'Zora Zeugin');
+
+  const geaendert = await fetch(`${baseUrl}/api/musiker/${musiker.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify({ kuerzel: 'ZZ', name: 'Zora Zeugin-Neu' }),
+  });
+  assert.equal(geaendert.status, 200);
+  assert.equal((await geaendert.json()).musiker.name, 'Zora Zeugin-Neu');
+
+  const geloescht = await fetch(`${baseUrl}/api/musiker/${musiker.id}`, { method: 'DELETE', headers: { Authorization: ORG_AUTH } });
+  assert.equal(geloescht.status, 204);
+});
+
+test('Musiker-CRUD: Löschen mit bestehender Termin-Teilnahme -> 409, nicht gelöscht (KEIN stilles Kaskadieren)', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  const { kursaalId } = await frischerZustand();
+
+  await fetch(`${baseUrl}/api/termine`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify(terminBody({ raumId: kursaalId, teilnehmer: ['AB'] })),
+  });
+  const musikerRow = await pool.query("SELECT id FROM musiker WHERE kuerzel = 'AB'");
+  const musikerId = musikerRow.rows[0].id;
+
+  const res = await fetch(`${baseUrl}/api/musiker/${musikerId}`, { method: 'DELETE', headers: { Authorization: ORG_AUTH } });
+  assert.equal(res.status, 409);
+
+  const nochDa = await pool.query('SELECT id FROM musiker WHERE id = $1', [musikerId]);
+  assert.equal(nochDa.rows.length, 1);
+});
+
+test('Konzerte+Werke-CRUD: anlegen (inkl. Teilnehmer), ändern, löschen', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  await frischerZustand();
+
+  const konzertRes = await fetch(`${baseUrl}/api/konzerte`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify({ nummer: 4200, name: 'Testkonzert', dauerMinuten: 60 }),
+  });
+  assert.equal(konzertRes.status, 201);
+  const { konzert } = await konzertRes.json();
+
+  const werkRes = await fetch(`${baseUrl}/api/werke`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify({ konzertId: konzert.id, nummer: 4201, name: 'Testwerk', dauerMinuten: 12, teilnehmer: ['AB', 'CD'] }),
+  });
+  assert.equal(werkRes.status, 201);
+  const { id: werkId } = await werkRes.json();
+
+  const listeRes = await fetch(`${baseUrl}/api/werke`);
+  const werke = (await listeRes.json()).werke;
+  const angelegtesWerk = werke.find((w) => w.id === werkId);
+  assert.deepEqual(angelegtesWerk.teilnehmer, ['AB', 'CD']);
+  assert.equal(angelegtesWerk.konzertNummer, 4200);
+
+  // Konzert kann nicht gelöscht werden, solange das Werk noch existiert.
+  const konzertLoeschVersuch = await fetch(`${baseUrl}/api/konzerte/${konzert.id}`, { method: 'DELETE', headers: { Authorization: ORG_AUTH } });
+  assert.equal(konzertLoeschVersuch.status, 409);
+
+  // Werk ändern (Teilnehmer ersetzen) funktioniert.
+  const werkAendern = await fetch(`${baseUrl}/api/werke/${werkId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify({ konzertId: konzert.id, nummer: 4201, name: 'Testwerk geändert', dauerMinuten: 15, teilnehmer: ['EF'] }),
+  });
+  assert.equal(werkAendern.status, 200);
+  const nachAendern = (await (await fetch(`${baseUrl}/api/werke`)).json()).werke.find((w) => w.id === werkId);
+  assert.deepEqual(nachAendern.teilnehmer, ['EF']);
+
+  // Werk löschen, dann Konzert löschen -- beides sollte jetzt gehen.
+  const werkLoeschen = await fetch(`${baseUrl}/api/werke/${werkId}`, { method: 'DELETE', headers: { Authorization: ORG_AUTH } });
+  assert.equal(werkLoeschen.status, 204);
+  const konzertLoeschen = await fetch(`${baseUrl}/api/konzerte/${konzert.id}`, { method: 'DELETE', headers: { Authorization: ORG_AUTH } });
+  assert.equal(konzertLoeschen.status, 204);
+});
+
+test('Stammdaten-CRUD: Anlegen auf archivierter Saison -> 403', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  await frischerZustand();
+  await pool.query('DELETE FROM saisons WHERE jahr = 2095');
+  await fetch(`${baseUrl}/api/saisons`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify({ jahr: 2095, bezeichnung: 'ZwT 2095 (Test)' }),
+  });
+  try {
+    const res = await fetch(`${baseUrl}/api/raeume?saison=2095`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+      body: JSON.stringify({ name: 'Sollte scheitern' }),
+    });
+    assert.equal(res.status, 403);
+  } finally {
+    await pool.query('DELETE FROM saisons WHERE jahr = 2095');
+  }
+});

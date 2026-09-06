@@ -221,24 +221,37 @@ Downloads bei ihm nicht zuverlässig im normalen Downloads-Ordner landen
   anderen automatisch Archiv (nur lesbar) — DB-seitig per partiellem
   Unique-Index erzwungen. Jahres-Dropdown auf allen 3 Seiten, neue
   Saison anlegen + aktivieren über einen "Saison-Verwaltung…"-Bereich
-  in `admin.html`. Bewusst NICHT gebaut: eigene CRUD-Oberflächen für
-  Räume/Musiker/Konzerte/Werke einer neuen Saison — dafür bleibt das
-  bestehende Seed-Skript-Muster (Rafi liefert Daten, Sitzung generiert
-  SQL, einmalig ausführen). 12 neue automatisierte Tests +
-  manuelle Verifikation per echtem Postgres/Playwright (neue Saison
-  anlegen → aktivieren → alte Saison wird automatisch Archiv,
-  Schreibversuche dort geben 403, Lesen bleibt möglich). Dabei einen
-  echten Bug per Test gefunden+behoben: eine einzelne
-  "SET aktiv = (id = $1)"-Anweisung zum Umschalten verletzte je nach
-  Zeilen-Reihenfolge den Unique-Index — jetzt zwei Anweisungen in
-  einer Transaktion (siehe REFERENCE.md Abschnitt 17/13).
+  in `admin.html`.
+  **Nachtrag, selber Tag (07.09.2026), auf weiteres Rafi-Feedback**:
+  Saison-Wähler auf allen 3 Seiten neben den Titel verschoben (nicht
+  mehr in der Toolbar); "Saison-Verwaltung…" um vier CRUD-Tabs
+  erweitert -- Räume/Musiker:innen/Konzerte/Werke der gewählten Saison
+  lassen sich jetzt DIREKT in der Oberfläche anlegen/bearbeiten/löschen
+  (bewusst ohne die Termine dort zu zeigen), das bisher geplante reine
+  Seed-Skript-Muster ist damit überholt/ergänzt -- SQL-Skripte bleiben
+  trotzdem nützlich für grosse Erstbefüllungen (Bulk-Import). Zusätzlich
+  `musikerplan.html`: Musiker-Kürzel-Feld ist jetzt eine
+  Mehrfachauswahl-Liste (Kürzel + Vollname) statt Freitext, lädt bei
+  Auswahländerung automatisch neu. 18 neue automatisierte Tests +
+  ausführliche manuelle Verifikation per echtem Postgres/Playwright
+  (neue Saison anlegen → aktivieren → alte Saison wird automatisch
+  Archiv, Schreibversuche dort geben 403, Lesen bleibt möglich; Raum/
+  Musiker:in/Konzert/Werk inkl. Teilnehmer über die neue Oberfläche
+  angelegt/geändert/gelöscht, neues Werk sofort im bestehenden
+  Werk-Autocomplete nutzbar, Lösch-Blockade bei referenzierter Person
+  sichtbar bestätigt). Dabei einen echten Bug per Test gefunden+behoben:
+  eine einzelne "SET aktiv = (id = $1)"-Anweisung zum Umschalten
+  verletzte je nach Zeilen-Reihenfolge den Unique-Index — jetzt zwei
+  Anweisungen in einer Transaktion (siehe REFERENCE.md Abschnitt 17/13).
+  Volle Doku: REFERENCE.md Abschnitt 17.
   **Für den VPS-Deploy diesmal WICHTIG**: zusätzlich zu den Code-
   Dateien muss `db/migration-saisons.sql` NACH `db/migration-werke.sql`
   UND VOR `db/seed-raeume.sql`/`db/seed-werke-2026.sql` laufen (diese
   beiden Seed-Skripte wurden ebenfalls angepasst und würden ohne die
   Migration jetzt fehlschlagen, falls sie je erneut ausgeführt werden
   — auf dem Produktiv-VPS sind sie aber schon gelaufen, müssen NICHT
-  wiederholt werden, nur die neue Migration).
+  wiederholt werden, nur die neue Migration). **Noch NICHT auf dem VPS
+  ausgerollt** (Stand dieses Eintrags) — nächster Schritt.
 
 ## Letzte Sicherung (ZIP an Nutzer per SendUserFile)
 - 03.09.2026, 04.09.2026; danach unregelmässig während Tagsitzungen.

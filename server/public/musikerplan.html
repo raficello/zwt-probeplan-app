@@ -5,13 +5,16 @@
 <title>ZwT Probeplan — Musikerplan</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; }
-  h1 { font-size: 1.1rem; margin: 0 0 0.75rem 0; }
+  h1 { font-size: 1.1rem; margin: 0; }
+  .kopfzeile { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+  .saison-kopf { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #555; }
   nav { font-size: 0.9rem; margin-bottom: 0.5rem; }
-  .toolbar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+  .toolbar { display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
   .toolbar button { font-size: 1rem; padding: 0.25rem 0.75rem; cursor: pointer; }
   .toolbar input[type="date"] { font-size: 1rem; padding: 0.25rem; }
-  .toolbar input[type="text"] { font-size: 1rem; padding: 0.25rem; width: 16rem; }
   .toolbar label { font-size: 0.85rem; color: #555; }
+  #kuerzel { font-size: 0.9rem; min-width: 14rem; }
+  #kuerzel option { padding: 0.15rem 0.3rem; }
   #status { color: #900; margin-bottom: 0.5rem; }
   /* Vertikale Tagesansicht (Rafi-Feedback, 07.09.2026), siehe
      raumplan.html für dasselbe Muster/dieselben Kommentare. */
@@ -34,16 +37,20 @@
 </style>
 </head>
 <body>
-  <h1>ZwT Probeplan — Musikerplan</h1>
+  <div class="kopfzeile">
+    <h1>ZwT Probeplan — Musikerplan</h1>
+    <div class="saison-kopf">
+      <label for="saisonAuswahl">Saison</label>
+      <select id="saisonAuswahl"></select>
+    </div>
+  </div>
   <nav><a href="/raumplan.html">Zur Raumplan-Ansicht</a> <a href="/admin.html">Zur Terminverwaltung</a></nav>
   <div class="toolbar">
-    <label for="saisonAuswahl">Saison</label>
-    <select id="saisonAuswahl"></select>
     <button id="btnZurueck">&larr; Tag zurück</button>
     <select id="datum"></select>
     <button id="btnVor">Tag vor &rarr;</button>
-    <label for="kuerzel">Musiker-Kürzel (leer = alle, die an diesem Tag einen Termin haben):</label>
-    <input type="text" id="kuerzel" placeholder="z.B. AB, CD">
+    <label for="kuerzel">Musiker:innen (leer = alle, die an diesem Tag einen Termin haben; mehrere mit Strg/Cmd-Klick):</label>
+    <select id="kuerzel" multiple size="6"></select>
   </div>
   <div id="archivBanner" style="background:#fff3b0;border:1px solid #d9b400;border-radius:4px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.9rem" hidden>
     Diese Saison ist nicht aktiv (Archiv oder noch nicht gestartet) — nur lesbar.
@@ -100,7 +107,9 @@
       var jahr = Number(saisonAuswahlEl.value);
       aktuelleSaison = saisonen.find(function (s) { return s.jahr === jahr; }) || aktuelleSaison;
       wendeArchivModusAn();
-      ladeTag(datumInput.value);
+      ladeMusikerListe().then(function () {
+        ladeTag(datumInput.value);
+      });
     }
 
     function ladeSaisonen() {
@@ -153,13 +162,33 @@
       ladeTag(datumInput.value);
     }
 
+    // Rafi-Feedback 07.09.2026: Mehrfachauswahl-Liste (Kürzel + Vollname)
+    // statt freiem Text-Eingabefeld -- Werte kommen direkt aus den
+    // Listen-Optionen (siehe ladeMusikerListe unten), deshalb KEIN
+    // .toUpperCase() mehr nötig/gewünscht (manche Kürzel im Bestand sind
+    // bewusst gemischt geschrieben, z.B. "MEh").
     function gewuenschteKuerzel(termine) {
-      var eingabe = kuerzelInput.value.trim();
-      if (!eingabe) return ermittleMusikerAusTerminen(termine);
-      return eingabe
-        .split(/[,\s]+/)
-        .map(function (k) { return k.trim().toUpperCase(); })
-        .filter(Boolean);
+      var ausgewaehlt = Array.prototype.slice.call(kuerzelInput.selectedOptions).map(function (o) { return o.value; });
+      if (!ausgewaehlt.length) return ermittleMusikerAusTerminen(termine);
+      return ausgewaehlt;
+    }
+
+    // Befüllt die Mehrfachauswahl-Liste mit allen Musiker:innen der
+    // aktuellen Saison (Kürzel + Vollname, falls bekannt).
+    function ladeMusikerListe() {
+      return fetch('/api/musiker?saison=' + aktuelleSaison.jahr)
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          var vorherAusgewaehlt = Array.prototype.slice.call(kuerzelInput.selectedOptions).map(function (o) { return o.value; });
+          kuerzelInput.innerHTML = '';
+          (data.musiker || []).forEach(function (m) {
+            var opt = document.createElement('option');
+            opt.value = m.kuerzel;
+            opt.textContent = m.kuerzel + (m.name ? ' — ' + m.name : '');
+            if (vorherAusgewaehlt.indexOf(m.kuerzel) !== -1) opt.selected = true;
+            kuerzelInput.appendChild(opt);
+          });
+        });
     }
 
     // Baut die vertikale Tagesansicht komplett neu auf -- siehe
@@ -270,7 +299,10 @@
     // STILL kaputt gemacht hatte (Bug, hier beim Saison-Umbau gefunden
     // und mitbehoben) -- zeichneTagesraster() baut ohnehin bei jedem
     // Aufruf komplett neu auf, eine Existenzprüfung ist nicht mehr nötig.
-    kuerzelInput.addEventListener('input', function () {
+    // Jetzt eine Mehrfachauswahl-Liste statt Text-Eingabefeld (Rafi-
+    // Feedback 07.09.2026: "Wenn ich Musiker neu wähle, sollte es neu
+    // laden") -- "change" statt "input" ist das passende Ereignis dafür.
+    kuerzelInput.addEventListener('change', function () {
       aktualisiereAnzeige(datumInput.value);
     });
     saisonAuswahlEl.addEventListener('change', saisonGewechselt);
@@ -279,10 +311,21 @@
     var startDatum = urlParams.get('datum');
     fuelleDatumsAuswahl(datumInput);
     datumInput.value = FESTIVAL_TAGE.indexOf(startDatum) !== -1 ? startDatum : FESTIVAL_TAGE[0];
-    if (urlParams.get('kuerzel')) kuerzelInput.value = urlParams.get('kuerzel');
-    ladeSaisonen().then(function () {
-      ladeTag(datumInput.value);
-    });
+    ladeSaisonen()
+      .then(ladeMusikerListe)
+      .then(function () {
+        // ?kuerzel=AB,CD in der URL vorauswählen -- muss NACH
+        // ladeMusikerListe() passieren, sonst gibt es die Optionen noch
+        // nicht zum Auswählen.
+        var vorausgewaehlt = urlParams.get('kuerzel');
+        if (vorausgewaehlt) {
+          var gewuenschte = vorausgewaehlt.split(/[,\s]+/).map(function (k) { return k.trim(); }).filter(Boolean);
+          Array.prototype.forEach.call(kuerzelInput.options, function (opt) {
+            if (gewuenschte.indexOf(opt.value) !== -1) opt.selected = true;
+          });
+        }
+        ladeTag(datumInput.value);
+      });
   </script>
 </body>
 </html>

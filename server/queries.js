@@ -193,6 +193,13 @@ const SELECT_RAUM_SQL = `
   SELECT id, name, aud_code, erlaubte_tage, saison_id FROM raeume WHERE id = $1
 `;
 
+// ALLE Musiker:innen EINER Saison (Kürzel + Vollname, falls bekannt) --
+// Grundlage für die Mehrfachauswahl-Liste in musikerplan.html
+// (Rafi-Feedback, 07.09.2026). $1 = saisonId.
+const SELECT_MUSIKER_SQL = `
+  SELECT id, kuerzel, name FROM musiker WHERE saison_id = $1 ORDER BY kuerzel
+`;
+
 // ALLE Räume EINER Saison, auch ohne Termin an einem bestimmten Tag
 // (Nachfolger von confRaeume, REFERENCE.md Abschnitt 2) — Grundlage für
 // die Raum-Auswahl in der Terminverwaltung. $1 = saisonId (Pflicht seit
@@ -304,6 +311,148 @@ const SELECT_WERK_VORSCHLAEGE_SQL = `
   LIMIT 15
 `;
 
+// ---- Saison-Verwaltung: CRUD für Räume/Musiker/Konzerte/Werke ----
+// (Rafi-Feedback, 07.09.2026: "Dann die Raumliste, Musikerliste,
+// Konzertliste, Werkeliste steuern" -- pro Saison eigene Stammdaten
+// pflegen können, ohne dafür jedes Mal ein SQL-Skript zu brauchen.
+// Alle vier folgen demselben Muster: List/Insert/Update/Delete, jeweils
+// per saisonId ODER per (id, saisonId) gescoped, damit man nie aus
+// Versehen eine Zeile einer ANDEREN Saison trifft.)
+
+// Saison (inkl. aktiv-Status) einer bestehenden Zeile per ID -- Basis
+// für die Archiv-Schreibsperre bei PUT/DELETE, analog zu
+// SELECT_TERMIN_SAISON_SQL oben (dieselbe Begründung: ein Termin/Raum/
+// Musiker/Konzert/Werk wechselt nie die Saison, deshalb wird sie beim
+// Bearbeiten immer direkt von der Zeile selbst abgelesen, nie aus
+// einem Query-Parameter).
+const SELECT_RAUM_SAISON_SQL = `
+  SELECT s.id AS saison_id, s.aktiv FROM raeume r JOIN saisons s ON s.id = r.saison_id WHERE r.id = $1
+`;
+const SELECT_MUSIKER_SAISON_SQL = `
+  SELECT s.id AS saison_id, s.aktiv FROM musiker m JOIN saisons s ON s.id = m.saison_id WHERE m.id = $1
+`;
+const SELECT_KONZERT_SAISON_SQL = `
+  SELECT s.id AS saison_id, s.aktiv FROM konzerte k JOIN saisons s ON s.id = k.saison_id WHERE k.id = $1
+`;
+const SELECT_WERK_SAISON_SQL = `
+  SELECT s.id AS saison_id, s.aktiv FROM werke w JOIN saisons s ON s.id = w.saison_id WHERE w.id = $1
+`;
+
+// -- Räume --
+const INSERT_RAUM_SQL = `
+  INSERT INTO raeume (name, aud_code, erlaubte_tage, saison_id)
+  VALUES ($1, $2, $3, $4)
+  RETURNING id, name, aud_code, erlaubte_tage
+`;
+const UPDATE_RAUM_SQL = `
+  UPDATE raeume SET name = $1, aud_code = $2, erlaubte_tage = $3
+  WHERE id = $4 AND saison_id = $5
+  RETURNING id, name, aud_code, erlaubte_tage
+`;
+// Löscht NUR, wenn kein Termin (mehr) auf diesen Raum verweist -- sonst
+// würde man sich (oder anderen) unbemerkt Termine "kaputt machen".
+// `termine_raum_id_fkey` hat kein ON DELETE CASCADE, ein Löschversuch
+// mit noch bestehenden Terminen wirft ohnehin einen FK-Fehler (23503,
+// vom Aufrufer in eine verständliche 409 übersetzt) -- diese Abfrage
+// dient nur der Räume-eigenen Saison-Prüfung.
+const DELETE_RAUM_SQL = `
+  DELETE FROM raeume WHERE id = $1 AND saison_id = $2
+  RETURNING id
+`;
+
+// -- Musiker:innen --
+const INSERT_MUSIKER_MIT_NAME_SQL = `
+  INSERT INTO musiker (kuerzel, name, saison_id) VALUES ($1, $2, $3)
+  RETURNING id, kuerzel, name
+`;
+const UPDATE_MUSIKER_SQL = `
+  UPDATE musiker SET kuerzel = $1, name = $2
+  WHERE id = $3 AND saison_id = $4
+  RETURNING id, kuerzel, name
+`;
+// Zählt Verwendungen in Terminen/Werken/Werk-Vorlagen -- der Aufrufer
+// blockt das Löschen bei einem Treffer (klare Fehlermeldung statt
+// stillem Kaskaden-Verlust von Teilnehmer-Zuordnungen, siehe
+// termin_musiker/werk_musiker/werk_vorlage_musiker: alle mit
+// ON DELETE CASCADE, ein Löschen hier würde sie sonst unbemerkt leeren).
+const ZAEHLE_MUSIKER_VERWENDUNG_SQL = `
+  SELECT
+    (SELECT count(*) FROM termin_musiker WHERE musiker_id = $1) +
+    (SELECT count(*) FROM werk_musiker WHERE musiker_id = $1) +
+    (SELECT count(*) FROM werk_vorlage_musiker WHERE musiker_id = $1)
+    AS anzahl
+`;
+const DELETE_MUSIKER_SQL = `
+  DELETE FROM musiker WHERE id = $1 AND saison_id = $2
+  RETURNING id
+`;
+
+// -- Konzerte --
+const SELECT_KONZERTE_SQL = `
+  SELECT id, nummer, name, dauer_minuten FROM konzerte
+  WHERE saison_id = $1 ORDER BY nummer
+`;
+const INSERT_KONZERT_SQL = `
+  INSERT INTO konzerte (nummer, name, dauer_minuten, saison_id)
+  VALUES ($1, $2, $3, $4)
+  RETURNING id, nummer, name, dauer_minuten
+`;
+const UPDATE_KONZERT_SQL = `
+  UPDATE konzerte SET nummer = $1, name = $2, dauer_minuten = $3
+  WHERE id = $4 AND saison_id = $5
+  RETURNING id, nummer, name, dauer_minuten
+`;
+// Wie bei Räumen: nicht löschen, solange noch Werke daran hängen (die
+// FK `werke_konzert_id_fkey` hat ON DELETE CASCADE -- ein Löschen
+// hier würde sonst unbemerkt ALLE Werke dieses Konzerts mitlöschen).
+const ZAEHLE_WERKE_IM_KONZERT_SQL = `
+  SELECT count(*) AS anzahl FROM werke WHERE konzert_id = $1
+`;
+const DELETE_KONZERT_SQL = `
+  DELETE FROM konzerte WHERE id = $1 AND saison_id = $2
+  RETURNING id
+`;
+
+// -- Werke (inkl. Teilnehmer, gleiches Muster wie Termine) --
+const SELECT_WERKE_SQL = `
+  SELECT w.id, w.nummer, w.name, w.dauer_minuten, w.konzert_id,
+    k.nummer AS konzert_nummer, k.name AS konzert_name,
+    COALESCE(array_agg(m.kuerzel ORDER BY m.kuerzel) FILTER (WHERE m.kuerzel IS NOT NULL), '{}') AS teilnehmer
+  FROM werke w
+  JOIN konzerte k ON k.id = w.konzert_id
+  LEFT JOIN werk_musiker wm ON wm.werk_id = w.id
+  LEFT JOIN musiker m ON m.id = wm.musiker_id
+  WHERE w.saison_id = $1
+  GROUP BY w.id, k.nummer, k.name
+  ORDER BY w.nummer
+`;
+const INSERT_WERK_SQL = `
+  INSERT INTO werke (konzert_id, nummer, name, dauer_minuten, saison_id)
+  VALUES ($1, $2, $3, $4, $5)
+  RETURNING id
+`;
+const UPDATE_WERK_SQL = `
+  UPDATE werke SET konzert_id = $1, nummer = $2, name = $3, dauer_minuten = $4
+  WHERE id = $5 AND saison_id = $6
+  RETURNING id
+`;
+const DELETE_WERK_MUSIKER_SQL = `
+  DELETE FROM werk_musiker WHERE werk_id = $1
+`;
+const INSERT_WERK_MUSIKER_SQL = `
+  INSERT INTO werk_musiker (werk_id, musiker_id) VALUES ($1, $2)
+  ON CONFLICT DO NOTHING
+`;
+const DELETE_WERK_SQL = `
+  DELETE FROM werke WHERE id = $1 AND saison_id = $2
+  RETURNING id
+`;
+// Ein Konzert per ID (für die Saison-Prüfung beim Anlegen/Ändern eines
+// Werks, analog zu SELECT_RAUM_SQL bei Terminen).
+const SELECT_KONZERT_SQL = `
+  SELECT id, saison_id FROM konzerte WHERE id = $1
+`;
+
 module.exports = {
   SELECT_SAISONS_SQL,
   SELECT_SAISON_BY_JAHR_SQL,
@@ -317,6 +466,7 @@ module.exports = {
   SELECT_RAUM_PUFFER_SQL,
   SELECT_RAUM_SQL,
   SELECT_RAEUME_SQL,
+  SELECT_MUSIKER_SQL,
   INSERT_TERMIN_SQL,
   UPSERT_MUSIKER_SQL,
   INSERT_TERMIN_MUSIKER_SQL,
@@ -328,4 +478,27 @@ module.exports = {
   SELECT_LOCKED_AT_SQL,
   SELECT_WERK_VORSCHLAEGE_SQL,
   groupTermineRows,
+  INSERT_RAUM_SQL,
+  UPDATE_RAUM_SQL,
+  DELETE_RAUM_SQL,
+  INSERT_MUSIKER_MIT_NAME_SQL,
+  UPDATE_MUSIKER_SQL,
+  ZAEHLE_MUSIKER_VERWENDUNG_SQL,
+  DELETE_MUSIKER_SQL,
+  SELECT_KONZERTE_SQL,
+  INSERT_KONZERT_SQL,
+  UPDATE_KONZERT_SQL,
+  ZAEHLE_WERKE_IM_KONZERT_SQL,
+  DELETE_KONZERT_SQL,
+  SELECT_WERKE_SQL,
+  INSERT_WERK_SQL,
+  UPDATE_WERK_SQL,
+  DELETE_WERK_MUSIKER_SQL,
+  INSERT_WERK_MUSIKER_SQL,
+  DELETE_WERK_SQL,
+  SELECT_KONZERT_SQL,
+  SELECT_RAUM_SAISON_SQL,
+  SELECT_MUSIKER_SAISON_SQL,
+  SELECT_KONZERT_SAISON_SQL,
+  SELECT_WERK_SAISON_SQL,
 };
