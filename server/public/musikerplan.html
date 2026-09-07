@@ -4,26 +4,51 @@
 <meta charset="utf-8">
 <title>ZwT Probeplan — Musikerplan</title>
 <style>
-  body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; }
+  /* Rafi-Feedback, 06.09.2026: sticky Kopf + einziger Scroll-Container
+     statt body+`.tagesraster` verschachtelt -- siehe raumplan.html für
+     die ausführliche Begründung (identisches Muster hier). */
+  html, body { height: 100%; }
+  body {
+    font-family: system-ui, sans-serif; margin: 0; padding: 1rem; box-sizing: border-box;
+    height: 100vh; height: 100dvh;
+    display: flex; flex-direction: column;
+  }
   h1 { font-size: 1.1rem; margin: 0; }
-  .kopfzeile { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+  .kopfzeile { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap; flex: 0 0 auto; }
   .saison-kopf { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #555; }
-  nav { font-size: 0.9rem; margin-bottom: 0.5rem; }
-  .toolbar { display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+  nav { font-size: 0.9rem; margin-bottom: 0.5rem; flex: 0 0 auto; }
+  .toolbar { display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; flex: 0 0 auto; }
   .toolbar button { font-size: 1rem; padding: 0.25rem 0.75rem; cursor: pointer; }
   .toolbar input[type="date"] { font-size: 1rem; padding: 0.25rem; }
   .toolbar label { font-size: 0.85rem; color: #555; }
+  /* Rafi-Feedback, 06.09.2026: "die Instruktionen beim Künstlerfeld mit
+     Umbrüchen formatieren, dass es die Höhe des Feldes benutzt und
+     nicht zu breit ist" -- der Hinweistext neben der Mehrfachauswahl-
+     Liste (#kuerzel, 6 Zeilen hoch) lief bisher in der Flex-Toolbar als
+     eine einzige, sehr breite Zeile. Mit einer max-width bricht er
+     stattdessen mehrzeilig um und nutzt die Höhe des danebenstehenden
+     Feldes statt in die Breite zu laufen. */
+  label[for="kuerzel"] { max-width: 11rem; line-height: 1.3; }
   #kuerzel { font-size: 0.9rem; min-width: 14rem; }
   #kuerzel option { padding: 0.15rem 0.3rem; }
-  #status { color: #900; margin-bottom: 0.5rem; }
+  #status { color: #900; margin-bottom: 0.5rem; flex: 0 0 auto; }
+  #archivBanner { flex: 0 0 auto; }
   /* Vertikale Tagesansicht (Rafi-Feedback, 07.09.2026), siehe
      raumplan.html für dasselbe Muster/dieselben Kommentare. */
-  .tagesraster { border: 1px solid #ccc; overflow-x: auto; }
+  .tagesraster {
+    border: 1px solid #ccc; overflow: auto; -webkit-overflow-scrolling: touch;
+    flex: 1 1 auto; min-height: 0;
+  }
   .tagesraster-kopf, .tagesraster-koerper { display: grid; }
+  /* Sticky muss auf der ganzen Kopfzeile sitzen, nicht auf den einzelnen
+     Zellen -- siehe raumplan.html für die ausführliche Begründung
+     (identischer Fund/Fix hier). */
+  .tagesraster-kopf {
+    position: sticky; top: 0; z-index: 2;
+  }
   .tagesraster-kopf > div {
     padding: 0.35rem 0.5rem; font-weight: bold; font-size: 0.85rem;
     border-right: 1px solid #ccc; border-bottom: 1px solid #ccc; background: #f0f0f0;
-    position: sticky; top: 0; z-index: 2;
   }
   .tagesraster-zeitspalte, .tagesraster-spalte { position: relative; border-right: 1px solid #eee; }
   .tagesraster-stunde-linie { position: absolute; left: 0; right: 0; border-top: 1px solid #eee; }
@@ -32,7 +57,7 @@
     position: absolute; left: 2px; right: 2px; border: 1px solid #888; border-radius: 3px;
     font-size: 0.75rem; line-height: 1.2; padding: 0.15rem 0.3rem; overflow: hidden; box-sizing: border-box;
   }
-  .legende { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; font-size: 0.85rem; }
+  .legende { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; font-size: 0.85rem; flex: 0 0 auto; }
   .legende span.kaestchen { display: inline-block; width: 0.9em; height: 0.9em; border: 1px solid #999; vertical-align: middle; margin-right: 0.3em; }
 </style>
 </head>
@@ -44,7 +69,7 @@
       <select id="saisonAuswahl"></select>
     </div>
   </div>
-  <nav><a href="/raumplan.html">Zur Raumplan-Ansicht</a> <a href="/admin.html">Zur Terminverwaltung</a></nav>
+  <nav><a href="/">Startseite</a> <a href="/raumplan.html">Zur Raumplan-Ansicht</a> <a href="/admin.html">Zur Terminverwaltung</a></nav>
   <div class="toolbar">
     <button id="btnZurueck">&larr; Tag zurück</button>
     <select id="datum"></select>

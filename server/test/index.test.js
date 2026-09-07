@@ -46,8 +46,9 @@ test.before(async () => {
   // "Saison-Verwaltung") braucht JEDE Route eine aktive Saison -- ohne
   // ?saison=<Jahr> im Request wird automatisch die aktive verwendet
   // (resolveSaison in index.js). Diese Test-DB muss db/schema.sql,
-  // db/migration-werke.sql UND db/migration-saisons.sql bereits
-  // angewendet haben (wie bisher schon für die Basistabellen
+  // db/migration-werke.sql, db/migration-saisons.sql UND
+  // db/migration-benutzer.sql (für die Benutzer-CRUD-Tests unten)
+  // bereits angewendet haben (wie bisher schon für die Basistabellen
   // vorausgesetzt) -- hier wird nur EINE Test-Saison aktiviert, damit
   // alle bestehenden fetch()-Aufrufe ohne den neuen Parameter
   // weiterlaufen.
@@ -535,4 +536,103 @@ test('Stammdaten-CRUD: Anlegen auf archivierter Saison -> 403', async (t) => {
   } finally {
     await pool.query('DELETE FROM saisons WHERE jahr = 2095');
   }
+});
+
+// -- Benutzer:innen (07.09.2026, Rafi-Feedback: "Es sollte auch eine
+// Username/Passwort Funktion geben für verschiedene User.", siehe
+// REFERENCE.md "Mehrere Benutzer:innen" und server/auth.js). Bewusst
+// KEIN frischerZustand()-Aufruf nötig -- die benutzer-Tabelle ist
+// saisonunabhängig und wird hier selbst aufgeräumt (finally), statt
+// bei jedem Test global geleert zu werden.
+test('Benutzer-CRUD: anlegen, damit einloggen, Passwort ändern, löschen', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  await pool.query("DELETE FROM benutzer WHERE benutzername = 'test-benutzerin'");
+
+  try {
+    const angelegt = await fetch(`${baseUrl}/api/benutzer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+      body: JSON.stringify({ benutzername: 'test-benutzerin', passwort: 'geheim123' }),
+    });
+    assert.equal(angelegt.status, 201);
+    const { benutzer } = await angelegt.json();
+    assert.equal(benutzer.benutzername, 'test-benutzerin');
+    assert.equal(benutzer.passwortHash, undefined); // Hash wird NIE nach aussen gegeben
+
+    // Mit dem neuen Konto (nicht dem Notfallzugang) einloggen können.
+    const eigeneAuth = authHeader('test-benutzerin', 'geheim123');
+    const login = await fetch(`${baseUrl}/api/auth/pruefen`, { headers: { Authorization: eigeneAuth } });
+    assert.equal(login.status, 200);
+
+    // Falsches Passwort für dasselbe Konto weiterhin abgelehnt.
+    const falscherLogin = await fetch(`${baseUrl}/api/auth/pruefen`, {
+      headers: { Authorization: authHeader('test-benutzerin', 'falsch') },
+    });
+    assert.equal(falscherLogin.status, 401);
+
+    // Doppelter Benutzername -> 400, nicht 500.
+    const doppelt = await fetch(`${baseUrl}/api/benutzer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+      body: JSON.stringify({ benutzername: 'test-benutzerin', passwort: 'geheim123' }),
+    });
+    assert.equal(doppelt.status, 400);
+
+    // Passwort ändern -- alter Login funktioniert danach nicht mehr, neuer schon.
+    const geaendert = await fetch(`${baseUrl}/api/benutzer/${benutzer.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+      body: JSON.stringify({ passwort: 'neuesgeheimnis' }),
+    });
+    assert.equal(geaendert.status, 200);
+    const altesPasswort = await fetch(`${baseUrl}/api/auth/pruefen`, { headers: { Authorization: eigeneAuth } });
+    assert.equal(altesPasswort.status, 401);
+    const neuesPasswort = await fetch(`${baseUrl}/api/auth/pruefen`, {
+      headers: { Authorization: authHeader('test-benutzerin', 'neuesgeheimnis') },
+    });
+    assert.equal(neuesPasswort.status, 200);
+
+    // GET listet das Konto (ohne Passwort-Hash).
+    const liste = await fetch(`${baseUrl}/api/benutzer`, { headers: { Authorization: ORG_AUTH } });
+    assert.equal(liste.status, 200);
+    const { benutzer: alle } = await liste.json();
+    assert.ok(alle.some((b) => b.benutzername === 'test-benutzerin'));
+    assert.ok(alle.every((b) => !('passwortHash' in b) && !('passwort_hash' in b)));
+
+    // Löschen -- danach schlägt der Login mit diesem Konto fehl,
+    // der Notfallzugang (ORGANISATOR_PASSWORT) funktioniert weiterhin.
+    const geloescht = await fetch(`${baseUrl}/api/benutzer/${benutzer.id}`, { method: 'DELETE', headers: { Authorization: ORG_AUTH } });
+    assert.equal(geloescht.status, 204);
+    const loginNachLoeschen = await fetch(`${baseUrl}/api/auth/pruefen`, {
+      headers: { Authorization: authHeader('test-benutzerin', 'neuesgeheimnis') },
+    });
+    assert.equal(loginNachLoeschen.status, 401);
+    const notfallLoginGehtWeiterhin = await fetch(`${baseUrl}/api/auth/pruefen`, { headers: { Authorization: ORG_AUTH } });
+    assert.equal(notfallLoginGehtWeiterhin.status, 200);
+  } finally {
+    await pool.query("DELETE FROM benutzer WHERE benutzername = 'test-benutzerin'");
+  }
+});
+
+test('POST /api/benutzer: zu kurzes Passwort -> 400, kein Konto angelegt', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  await pool.query("DELETE FROM benutzer WHERE benutzername = 'zu-kurz'");
+  const res = await fetch(`${baseUrl}/api/benutzer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: ORG_AUTH },
+    body: JSON.stringify({ benutzername: 'zu-kurz', passwort: '123' }),
+  });
+  assert.equal(res.status, 400);
+  const nachschlagen = await pool.query('SELECT id FROM benutzer WHERE benutzername = $1', ['zu-kurz']);
+  assert.equal(nachschlagen.rows.length, 0);
+});
+
+test('POST /api/benutzer: ohne Auth-Header -> 401, nichts angelegt', async (t) => {
+  if (!dbErreichbar) return t.skip('Keine erreichbare Postgres-Instanz');
+  const res = await fetch(`${baseUrl}/api/benutzer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ benutzername: 'ohne-auth', passwort: 'geheim123' }),
+  });
+  assert.equal(res.status, 401);
 });

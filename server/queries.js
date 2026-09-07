@@ -287,24 +287,52 @@ const SELECT_LOCKED_AT_SQL = `
 // beides soll funktionieren -- Nummer eingeben ODER Namensanfang). $2 =
 // saisonId (Pflicht seit 07.09.2026, siehe REFERENCE.md
 // "Saison-Verwaltung").
+//
+// Nummer-Matching zusätzlich per LPAD auf 3 Stellen (Rafi-Feedback,
+// 07.09.2026: "bei Freundeskonzert ... die Werknummer 001 usw."): die
+// Werke des Freundeskonzerts (Konzert-Nummer 0) haben Nummern 1/2/3 --
+// als reine Ganzzahl gespeichert, ohne führende Nullen, wie es dem
+// Muster "Konzert-Nr * 100 + Sequenz" der übrigen Konzerte entsprechen
+// würde (401 statt 4|01). Deshalb BEIDE Formen prüfen (OR), nicht nur
+// die gepolsterte: die ungepolsterte deckt weiterhin normale Eingaben
+// wie "23" für Werk-Vorlage 23 ab (LPAD("23")="023" würde "23" NICHT
+// mehr matchen, wäre also ohne das OR eine Regression), die gepolsterte
+// deckt zusätzlich "001"/"01" für die Freundeskonzert-Werke ab. Die
+// Spalte selbst bleibt bewusst `int` (nicht `text`) für korrekte
+// NUMERISCHE Sortierung (sonst stünde "1001" vor "101"). Bei bereits
+// 3+-stelligen Nummern (100, 1001, ...) ist LPAD ein No-op.
+// `quelle` unterscheidet die beiden Quelltabellen im Ergebnis -- nötig,
+// weil sich ihre Nummernkreise bei 1-3 überschneiden können (Konzert-
+// stücke des Freundeskonzerts UND die ersten Werk-Vorlagen fangen
+// beide bei 1 an). Der Aufrufer (admin.html) nutzt das, um bei einem
+// exakten Zahlentreffer IMMER das Konzertstück zu bevorzugen, siehe
+// dortigen Kommentar.
 const SELECT_WERK_VORSCHLAEGE_SQL = `
   (
-    SELECT w.nummer, w.name, NULL::text AS typ, w.dauer_minuten,
+    SELECT w.nummer, w.name, NULL::text AS typ, w.dauer_minuten, 'werk'::text AS quelle,
       COALESCE(array_agg(m.kuerzel ORDER BY m.kuerzel) FILTER (WHERE m.kuerzel IS NOT NULL), '{}') AS teilnehmer
     FROM werke w
     LEFT JOIN werk_musiker wm ON wm.werk_id = w.id
     LEFT JOIN musiker m ON m.id = wm.musiker_id
-    WHERE (w.nummer::text LIKE $1 || '%' OR w.name ILIKE $1 || '%') AND w.saison_id = $2
+    WHERE (
+      w.nummer::text LIKE $1 || '%'
+      OR LPAD(w.nummer::text, 3, '0') LIKE $1 || '%'
+      OR w.name ILIKE $1 || '%'
+    ) AND w.saison_id = $2
     GROUP BY w.id
   )
   UNION ALL
   (
-    SELECT wv.nummer, wv.name, wv.typ, wv.dauer_minuten,
+    SELECT wv.nummer, wv.name, wv.typ, wv.dauer_minuten, 'vorlage'::text AS quelle,
       COALESCE(array_agg(m.kuerzel ORDER BY m.kuerzel) FILTER (WHERE m.kuerzel IS NOT NULL), '{}') AS teilnehmer
     FROM werk_vorlagen wv
     LEFT JOIN werk_vorlage_musiker wvm ON wvm.werk_vorlage_id = wv.id
     LEFT JOIN musiker m ON m.id = wvm.musiker_id
-    WHERE (wv.nummer::text LIKE $1 || '%' OR wv.name ILIKE $1 || '%') AND wv.saison_id = $2
+    WHERE (
+      wv.nummer::text LIKE $1 || '%'
+      OR LPAD(wv.nummer::text, 3, '0') LIKE $1 || '%'
+      OR wv.name ILIKE $1 || '%'
+    ) AND wv.saison_id = $2
     GROUP BY wv.id
   )
   ORDER BY nummer
@@ -453,6 +481,30 @@ const SELECT_KONZERT_SQL = `
   SELECT id, saison_id FROM konzerte WHERE id = $1
 `;
 
+// -- Benutzer:innen (07.09.2026, siehe REFERENCE.md "Mehrere
+// Benutzer:innen") -- bewusst OHNE saison_id, Konten gelten
+// saisonübergreifend. Das Login selbst (Passwort-Hash-Vergleich)
+// nutzt direkt eine Inline-Query in server/auth.js, damit auth.js
+// keine index.js-spezifischen queries.js-Exporte importieren muss --
+// diese Konstanten hier sind für die Verwaltungs-Endpoints
+// (GET/POST/PUT/DELETE /api/benutzer) in index.js.
+const SELECT_BENUTZER_SQL = `
+  SELECT id, benutzername, erstellt_am FROM benutzer ORDER BY benutzername
+`;
+const INSERT_BENUTZER_SQL = `
+  INSERT INTO benutzer (benutzername, passwort_hash)
+  VALUES ($1, $2)
+  RETURNING id, benutzername, erstellt_am
+`;
+const UPDATE_BENUTZER_PASSWORT_SQL = `
+  UPDATE benutzer SET passwort_hash = $1 WHERE id = $2
+  RETURNING id, benutzername, erstellt_am
+`;
+const DELETE_BENUTZER_SQL = `
+  DELETE FROM benutzer WHERE id = $1
+  RETURNING id
+`;
+
 module.exports = {
   SELECT_SAISONS_SQL,
   SELECT_SAISON_BY_JAHR_SQL,
@@ -501,4 +553,8 @@ module.exports = {
   SELECT_MUSIKER_SAISON_SQL,
   SELECT_KONZERT_SAISON_SQL,
   SELECT_WERK_SAISON_SQL,
+  SELECT_BENUTZER_SQL,
+  INSERT_BENUTZER_SQL,
+  UPDATE_BENUTZER_PASSWORT_SQL,
+  DELETE_BENUTZER_SQL,
 };

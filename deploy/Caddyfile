@@ -1,20 +1,23 @@
 # ZwT Probeplan — Caddy-Reverse-Proxy-Konfiguration.
 #
-# WICHTIG: die Domain-Frage ist laut PROGRESS.md (Phase 0) noch offen.
-# Bis eine echte Domain feststeht, kann testweise mit der nackten
-# VPS-IP gearbeitet werden (Caddy stellt dann kein automatisches HTTPS
-# aus, siehe Block unten) — für den produktiven Betrieb aber eine
-# richtige Domain eintragen, dann übernimmt Caddy automatisch Let's-
-# Encrypt-Zertifikate ohne weitere Konfiguration.
+# Domain ist seit 07.09.2026 bekannt (Rafi-Feedback): schedule.zwischentoene.com
+# zeigt bereits auf diesen VPS. Caddy übernimmt automatisch ein
+# Let's-Encrypt-Zertifikat für diese Domain, sobald der Container mit
+# dieser Datei läuft und Port 80+443 von aussen erreichbar sind (siehe
+# deploy/README.md Schritt 8, Firewall) — keine weitere Konfiguration
+# nötig.
 
-# --- Produktiv-Variante (sobald Domain feststeht) ---
-# probeplan.example.ch {
-# 	reverse_proxy app:3000
-# 	encode gzip
-# }
-
-# --- Übergangs-Variante: nackte IP, kein automatisches HTTPS ---
-:80 {
+schedule.zwischentoene.com {
 	reverse_proxy app:3000
 	encode gzip
 }
+
+# --- Übergangs-Variante: nackte IP, falls die Domain mal nicht
+# auflöst oder zu Testzwecken parallel gebraucht wird. Kein
+# automatisches HTTPS über die nackte IP (Let's Encrypt braucht einen
+# Hostnamen) -- bei Bedarf einkommentieren. Normalerweise NICHT nötig,
+# seit die Domain steht.
+# :80 {
+# 	reverse_proxy app:3000
+# 	encode gzip
+# }

@@ -2,7 +2,13 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { berechnePosition, ermittleFenster, stundenraster } = require('../public/tagesraster');
+const {
+  berechnePosition,
+  ermittleFenster,
+  stundenraster,
+  abrundenAufStunde,
+  aufrundenAufStunde,
+} = require('../public/tagesraster');
 
 test('berechnePosition: Start direkt am Fensteranfang ergibt top=0', () => {
   const pos = berechnePosition('2026-10-12T07:00:00', '2026-10-12T08:00:00', '2026-10-12T07:00:00', 1, 0);
@@ -37,24 +43,66 @@ test('ermittleFenster: ohne Termine bleibt es beim Standard-Sichtfenster', () =>
   assert.equal(fenster.ende, '2026-10-12T23:00:00');
 });
 
-test('ermittleFenster: ein früher Termin erweitert den Fensteranfang nach vorne', () => {
-  const items = [{ start: '2026-10-12T06:15:00', end: '2026-10-12T06:45:00' }];
+// Rafi-Feedback, 06.09.2026: "nur diese Stunden angezeigt werden, die auch
+// gebraucht werden. Also nicht vor dem ersten und nach dem letzten Termin"
+// -- ab jetzt polstern minStart/minEnde ein Fenster mit vorhandenen
+// Terminen NICHT mehr auf, sie gelten nur noch als Ersatzwert für einen
+// Tag ganz ohne Termine (Test oben).
+
+test('ermittleFenster: ein einzelner Termin ergibt ein Fenster genau um diesen Termin (auf volle Stunden gerundet), NICHT das Standard-Sichtfenster', () => {
+  const items = [{ start: '2026-10-12T14:45:00', end: '2026-10-12T15:30:00' }];
   const fenster = ermittleFenster('2026-10-12', items, '07:00:00', '23:00:00');
-  assert.equal(fenster.start, '2026-10-12T06:15:00');
-  assert.equal(fenster.ende, '2026-10-12T23:00:00');
+  assert.equal(fenster.start, '2026-10-12T14:00:00'); // abgerundet
+  assert.equal(fenster.ende, '2026-10-12T16:00:00'); // aufgerundet
 });
 
-test('ermittleFenster: ein spaeter Termin erweitert das Fensterende nach hinten', () => {
+test('ermittleFenster: ein früher Termin bestimmt den Fensteranfang (abgerundet), ignoriert minStart', () => {
+  const items = [{ start: '2026-10-12T06:15:00', end: '2026-10-12T06:45:00' }];
+  const fenster = ermittleFenster('2026-10-12', items, '07:00:00', '23:00:00');
+  assert.equal(fenster.start, '2026-10-12T06:00:00');
+  assert.equal(fenster.ende, '2026-10-12T07:00:00');
+});
+
+test('ermittleFenster: ein spaeter Termin bestimmt das Fensterende (aufgerundet), ignoriert minEnde', () => {
   const items = [{ start: '2026-10-12T23:30:00', end: '2026-10-12T23:59:00' }];
   const fenster = ermittleFenster('2026-10-12', items, '07:00:00', '23:00:00');
-  assert.equal(fenster.start, '2026-10-12T07:00:00');
-  assert.equal(fenster.ende, '2026-10-12T23:59:00');
+  assert.equal(fenster.start, '2026-10-12T23:00:00');
+  assert.equal(fenster.ende, '2026-10-13T00:00:00'); // Rundung über Mitternacht hinweg korrekt
+});
+
+test('ermittleFenster: mehrere Termine -> Fenster vom fruehesten Anfang bis zum spaetesten Ende', () => {
+  const items = [
+    { start: '2026-10-12T14:45:00', end: '2026-10-12T15:30:00' },
+    { start: '2026-10-12T09:30:00', end: '2026-10-12T10:15:00' },
+    { start: '2026-10-12T18:00:00', end: '2026-10-12T20:00:00' },
+  ];
+  const fenster = ermittleFenster('2026-10-12', items, '07:00:00', '23:00:00');
+  assert.equal(fenster.start, '2026-10-12T09:00:00');
+  assert.equal(fenster.ende, '2026-10-12T20:00:00');
+});
+
+test('ermittleFenster: Termin exakt auf vollen Stunden bleibt unveraendert (keine unnoetige Rundung)', () => {
+  const items = [{ start: '2026-10-12T10:00:00', end: '2026-10-12T11:00:00' }];
+  const fenster = ermittleFenster('2026-10-12', items, '07:00:00', '23:00:00');
+  assert.equal(fenster.start, '2026-10-12T10:00:00');
+  assert.equal(fenster.ende, '2026-10-12T11:00:00');
 });
 
 test('ermittleFenster: Punkt-Termine ohne end nutzen start auch fuer die Ende-Berechnung', () => {
   const items = [{ start: '2026-10-12T23:45:00' }];
   const fenster = ermittleFenster('2026-10-12', items, '07:00:00', '23:00:00');
-  assert.equal(fenster.ende, '2026-10-12T23:45:00');
+  assert.equal(fenster.ende, '2026-10-13T00:00:00');
+});
+
+test('abrundenAufStunde: rundet auf den Beginn der Stunde ab', () => {
+  assert.equal(abrundenAufStunde('2026-10-12T14:45:30'), '2026-10-12T14:00:00');
+  assert.equal(abrundenAufStunde('2026-10-12T14:00:00'), '2026-10-12T14:00:00'); // schon glatt -> unveraendert
+});
+
+test('aufrundenAufStunde: rundet auf den Beginn der naechsten Stunde auf, ausser schon glatt', () => {
+  assert.equal(aufrundenAufStunde('2026-10-12T14:00:01'), '2026-10-12T15:00:00');
+  assert.equal(aufrundenAufStunde('2026-10-12T23:30:00'), '2026-10-13T00:00:00'); // Tagesgrenze korrekt
+  assert.equal(aufrundenAufStunde('2026-10-12T14:00:00'), '2026-10-12T14:00:00'); // schon glatt -> unveraendert
 });
 
 test('stundenraster: volle Stunden zwischen Fensteranfang und -ende, inklusive Randstunden', () => {

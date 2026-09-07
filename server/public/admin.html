@@ -64,6 +64,7 @@
     </div>
   </div>
   <nav>
+    <a href="/">Startseite</a>
     <a href="/raumplan.html">Zur Raumplan-Ansicht</a>
     <a href="/musikerplan.html">Zur Musiker-Ansicht</a>
   </nav>
@@ -73,8 +74,8 @@
        solange nicht erfolgreich eingeloggt, bleibt #hauptinhalt
        versteckt und nur diese Sperre sichtbar. -->
   <div id="loginSperre">
-    <p id="loginNachricht">Für die Terminverwaltung ist das Organisator:innen-Passwort nötig.</p>
-    <button id="btnLoginErneut" type="button">Passwort eingeben</button>
+    <p id="loginNachricht">Für die Terminverwaltung ist ein Benutzerkonto nötig.</p>
+    <button id="btnLoginErneut" type="button">Anmelden</button>
   </div>
 
   <div id="hauptinhalt" hidden>
@@ -111,6 +112,7 @@
         <button type="button" class="stammdaten-tab" data-tab="musiker">Musiker:innen</button>
         <button type="button" class="stammdaten-tab" data-tab="konzerte">Konzerte</button>
         <button type="button" class="stammdaten-tab" data-tab="werke">Werke</button>
+        <button type="button" class="stammdaten-tab" data-tab="benutzer">Benutzer:innen</button>
       </div>
 
       <div id="stammdatenRaeume" class="stammdaten-panel">
@@ -157,12 +159,33 @@
           <tbody id="werkeVerwaltungBody"></tbody>
         </table>
         <div class="stammdaten-neu-zeile">
-          <input type="number" id="neuesWerkNummer" placeholder="Nummer" style="width:5rem">
+          <input type="text" inputmode="numeric" id="neuesWerkNummer" placeholder="Nummer, z.B. 001" style="width:5rem">
           <input type="text" id="neuesWerkName" placeholder="Name">
           <select id="neuesWerkKonzert"></select>
           <input type="number" id="neuesWerkDauer" placeholder="Dauer (Min)" style="width:6rem">
           <input type="text" id="neuesWerkTeilnehmer" placeholder="Teilnehmer, z.B. AB, CD">
           <button type="button" id="btnWerkHinzufuegen">+ Werk</button>
+        </div>
+      </div>
+
+      <!-- Benutzer:innen-Verwaltung (Rafi-Feedback, 07.09.2026: "Es
+           sollte auch eine Username/Passwort Funktion geben für
+           verschiedene User.", siehe REFERENCE.md "Mehrere
+           Benutzer:innen"). Bewusst OHNE Saison-Bezug (Konten gelten
+           saisonübergreifend) — deshalb hier immer bearbeitbar, anders
+           als die Saison-abhängigen Tabs oben (kein Archiv-Zustand). -->
+      <div id="stammdatenBenutzer" class="stammdaten-panel" hidden>
+        <p style="font-size:0.85rem;color:#555;margin:0 0 0.5rem">
+          Der bisherige gemeinsame Organisator:innen-Zugang funktioniert weiterhin zusätzlich als Notfallzugang.
+        </p>
+        <table class="stammdaten-tabelle">
+          <thead><tr><th>Benutzername</th><th>Angelegt am</th><th></th></tr></thead>
+          <tbody id="benutzerVerwaltungBody"></tbody>
+        </table>
+        <div class="stammdaten-neu-zeile">
+          <input type="text" id="neuerBenutzerName" placeholder="Benutzername" autocomplete="off">
+          <input type="password" id="neuerBenutzerPasswort" placeholder="Passwort (mind. 6 Zeichen)" autocomplete="new-password">
+          <button type="button" id="btnBenutzerHinzufuegen">+ Benutzer:in</button>
         </div>
       </div>
 
@@ -350,49 +373,67 @@
     }
 
     // Phase 7: Schreiben ist per Basic-Auth-artigem Header geschützt
-    // (siehe raumplan.html für dasselbe Muster). Passwort wird nur einmal
-    // pro Seitenaufruf abgefragt und bei falscher Eingabe verworfen, damit
+    // (siehe raumplan.html für dasselbe Muster). NEU 07.09.2026
+    // (Rafi-Feedback: "Es sollte auch eine Username/Passwort Funktion
+    // geben für verschiedene User"): Benutzername + Passwort werden
+    // beide abgefragt, damit sich jede Person mit ihrem eigenen Konto
+    // anmelden kann (siehe server/auth.js, "benutzer"-Tabelle,
+    // REFERENCE.md "Mehrere Benutzer:innen") -- der bisherige
+    // gemeinsame Organisator:innen-Zugang funktioniert weiterhin
+    // zusätzlich (Notfallzugang). Beide Werte werden nur einmal pro
+    // Seitenaufruf abgefragt und bei falscher Eingabe verworfen, damit
     // der nächste Versuch neu fragt.
+    var organisatorBenutzername = null;
     var organisatorPasswort = null;
     function organisatorAuthHeader() {
-      if (organisatorPasswort === null) {
-        organisatorPasswort = window.prompt('Organisator:innen-Passwort:') || '';
+      if (organisatorBenutzername === null) {
+        organisatorBenutzername = window.prompt('Benutzername:') || '';
       }
-      return 'Basic ' + btoa('organisator:' + organisatorPasswort);
+      if (organisatorPasswort === null) {
+        organisatorPasswort = window.prompt('Passwort:') || '';
+      }
+      return 'Basic ' + btoa(organisatorBenutzername + ':' + organisatorPasswort);
     }
 
-    // Rafi-Feedback 07.09.2026: Passwort soll beim LADEN der Seite
-    // abgefragt und geprüft werden, nicht erst beim ersten Speichern-
-    // Versuch -- solange kein gültiges Passwort vorliegt, bleibt der
-    // eigentliche Inhalt (#hauptinhalt) versteckt. Prüfung läuft gegen
-    // einen reinen Lese-Endpunkt ohne Nebenwirkungen (GET
-    // /api/auth/pruefen), damit ein falsches Passwort sofort auffällt
-    // statt erst beim ersten "Speichern"-Klick.
+    // Rafi-Feedback 07.09.2026: Zugangsdaten sollen beim LADEN der
+    // Seite abgefragt und geprüft werden, nicht erst beim ersten
+    // Speichern-Versuch -- solange keine gültigen Zugangsdaten
+    // vorliegen, bleibt der eigentliche Inhalt (#hauptinhalt)
+    // versteckt. Prüfung läuft gegen einen reinen Lese-Endpunkt ohne
+    // Nebenwirkungen (GET /api/auth/pruefen), damit eine falsche
+    // Eingabe sofort auffällt statt erst beim ersten "Speichern"-Klick.
     var loginSperreEl = document.getElementById('loginSperre');
     var loginNachrichtEl = document.getElementById('loginNachricht');
     var hauptinhaltEl = document.getElementById('hauptinhalt');
 
     function zeigeLoginSperre(nachricht) {
-      loginNachrichtEl.textContent = nachricht || 'Für die Terminverwaltung ist das Organisator:innen-Passwort nötig.';
+      loginNachrichtEl.textContent = nachricht || 'Für die Terminverwaltung ist ein Benutzerkonto nötig.';
       loginSperreEl.hidden = false;
       hauptinhaltEl.hidden = true;
     }
 
     function versucheLogin() {
-      var eingabe = window.prompt('Organisator:innen-Passwort:');
-      if (eingabe === null) {
-        zeigeLoginSperre('Ohne Passwort kann admin.html nicht verwendet werden.');
+      var benutzername = window.prompt('Benutzername:');
+      if (benutzername === null) {
+        zeigeLoginSperre('Ohne Anmeldung kann admin.html nicht verwendet werden.');
         return;
       }
-      organisatorPasswort = eingabe;
-      loginNachrichtEl.textContent = 'Prüfe Passwort...';
+      var passwort = window.prompt('Passwort:');
+      if (passwort === null) {
+        zeigeLoginSperre('Ohne Anmeldung kann admin.html nicht verwendet werden.');
+        return;
+      }
+      organisatorBenutzername = benutzername;
+      organisatorPasswort = passwort;
+      loginNachrichtEl.textContent = 'Prüfe Zugangsdaten...';
       fetch('/api/auth/pruefen', {
-        headers: { Authorization: 'Basic ' + btoa('organisator:' + organisatorPasswort) },
+        headers: { Authorization: 'Basic ' + btoa(organisatorBenutzername + ':' + organisatorPasswort) },
       })
         .then(function (res) {
           if (res.status === 401) {
+            organisatorBenutzername = null;
             organisatorPasswort = null;
-            zeigeLoginSperre('Falsches Passwort.');
+            zeigeLoginSperre('Falscher Benutzername oder falsches Passwort.');
             return;
           }
           if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -401,7 +442,7 @@
           starteApp();
         })
         .catch(function () {
-          zeigeLoginSperre('Verbindung zum Server fehlgeschlagen. Bitte "Passwort eingeben" erneut klicken.');
+          zeigeLoginSperre('Verbindung zum Server fehlgeschlagen. Bitte "Anmelden" erneut klicken.');
         });
     }
 
@@ -505,11 +546,32 @@
           var datalist = document.getElementById('werkVorschlaege');
           datalist.innerHTML = '';
           (data.vorschlaege || []).forEach(function (v) {
+            // Rafi-Feedback 07.09.2026: Freundeskonzert-Werke (Nummer
+            // 1/2/3) sollen als "001"/"002"/"003" erscheinen, passend zum
+            // Muster "Konzert-Nr*100+Sequenz" der übrigen Konzerte (401
+            // statt "4"). Beide Schreibweisen ("1" UND "001") als
+            // Treffer-Schlüssel eintragen, damit ein exakter Treffer
+            // unabhängig davon funktioniert, was genau getippt wurde.
+            //
+            // Nummernkollision 1-3: sowohl Konzertstücke des Freundes-
+            // konzerts als auch die ersten festen Werk-Vorlagen (z.B. 1 =
+            // "Saaleinlass") fangen bei 1 an. Bei einem exakten
+            // Zahlentreffer gewinnt IMMER das Konzertstück (v.quelle ===
+            // 'werk') -- wer "001" eingibt, meint sehr wahrscheinlich das
+            // Konzertstück, nicht den zufällig gleichnummerierten
+            // Ablaufpunkt. Ohne diese Regel würde je nach Antwort-
+            // Reihenfolge mal das eine, mal das andere gewinnen (Bug, per
+            // echtem Test hier gefunden).
+            var nummerGepolstert = String(v.nummer).padStart(3, '0');
             werkVorschlaegeNachName[v.name.toLowerCase()] = v;
-            werkVorschlaegeNachNummer[String(v.nummer)] = v;
+            var bisherigerTreffer = werkVorschlaegeNachNummer[String(v.nummer)];
+            if (!bisherigerTreffer || bisherigerTreffer.quelle !== 'werk' || v.quelle === 'werk') {
+              werkVorschlaegeNachNummer[String(v.nummer)] = v;
+              werkVorschlaegeNachNummer[nummerGepolstert] = v;
+            }
             var opt = document.createElement('option');
             opt.value = v.name;
-            opt.label = String(v.nummer) + ' — ' + v.teilnehmer.join(' ');
+            opt.label = nummerGepolstert + ' — ' + v.teilnehmer.join(' ');
             datalist.appendChild(opt);
           });
           werkExaktenTrefferUebernehmen();
@@ -634,6 +696,7 @@
       })
         .then(function (res) {
           if (res.status === 401) {
+            organisatorBenutzername = null;
             organisatorPasswort = null;
             throw new Error('Falsches Passwort — bitte "Neue Saison anlegen" erneut klicken');
           }
@@ -662,6 +725,7 @@
       })
         .then(function (res) {
           if (res.status === 401) {
+            organisatorBenutzername = null;
             organisatorPasswort = null;
             throw new Error('Falsches Passwort — bitte erneut versuchen');
           }
@@ -690,16 +754,18 @@
     var musikerListe = [];
     var konzerteListe = [];
     var werkeListe = [];
+    var benutzerListe = [];
 
     function ladeAlleStammdaten() {
       return ladeRaeume()
         .then(ladeMusikerVerwaltung)
         .then(ladeKonzerteVerwaltung)
-        .then(ladeWerkeVerwaltung);
+        .then(ladeWerkeVerwaltung)
+        .then(ladeBenutzerVerwaltung);
     }
 
     function stammdatenTabWaehlen(tab) {
-      ['raeume', 'musiker', 'konzerte', 'werke'].forEach(function (t) {
+      ['raeume', 'musiker', 'konzerte', 'werke', 'benutzer'].forEach(function (t) {
         var gross = t.charAt(0).toUpperCase() + t.slice(1);
         document.getElementById('stammdaten' + gross).hidden = t !== tab;
         document.querySelector('.stammdaten-tab[data-tab="' + t + '"]').classList.toggle('aktiv', t === tab);
@@ -765,7 +831,7 @@
         body: JSON.stringify({ name: name.trim(), erlaubteTage: parseTageEingabe(tageText) || [], audCode: audText.trim() || null }),
       })
         .then(function (res) {
-          if (res.status === 401) { organisatorPasswort = null; throw new Error('Falsches Passwort — bitte erneut versuchen'); }
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
           if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
         })
         .then(function () { zeigeStatus('Raum gespeichert.', 'erfolg'); return ladeRaeume(); })
@@ -776,7 +842,7 @@
       if (!confirm('Raum wirklich löschen?')) return;
       fetch('/api/raeume/' + id, { method: 'DELETE', headers: { Authorization: organisatorAuthHeader() } })
         .then(function (res) {
-          if (res.status === 401) { organisatorPasswort = null; throw new Error('Falsches Passwort — bitte erneut versuchen'); }
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
           if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
         })
         .then(function () { zeigeStatus('Raum gelöscht.', 'erfolg'); return ladeRaeume(); })
@@ -794,7 +860,7 @@
         body: JSON.stringify({ name: name.trim(), erlaubteTage: parseTageEingabe(tage) || [], audCode: aud.trim() || null }),
       })
         .then(function (res) {
-          if (res.status === 401) { organisatorPasswort = null; throw new Error('Falsches Passwort — bitte erneut versuchen'); }
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
           if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
         })
         .then(function () {
@@ -849,7 +915,7 @@
         body: JSON.stringify({ kuerzel: kuerzel.trim(), name: name.trim() || null }),
       })
         .then(function (res) {
-          if (res.status === 401) { organisatorPasswort = null; throw new Error('Falsches Passwort — bitte erneut versuchen'); }
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
           if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
         })
         .then(function () { zeigeStatus('Musiker:in gespeichert.', 'erfolg'); return ladeMusikerVerwaltung(); })
@@ -860,7 +926,7 @@
       if (!confirm('Diese Person wirklich löschen?')) return;
       fetch('/api/musiker/' + id, { method: 'DELETE', headers: { Authorization: organisatorAuthHeader() } })
         .then(function (res) {
-          if (res.status === 401) { organisatorPasswort = null; throw new Error('Falsches Passwort — bitte erneut versuchen'); }
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
           if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
         })
         .then(function () { zeigeStatus('Musiker:in gelöscht.', 'erfolg'); return ladeMusikerVerwaltung(); })
@@ -877,7 +943,7 @@
         body: JSON.stringify({ kuerzel: kuerzel.trim(), name: name.trim() || null }),
       })
         .then(function (res) {
-          if (res.status === 401) { organisatorPasswort = null; throw new Error('Falsches Passwort — bitte erneut versuchen'); }
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
           if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
         })
         .then(function () {
@@ -947,7 +1013,7 @@
         body: JSON.stringify(body),
       })
         .then(function (res) {
-          if (res.status === 401) { organisatorPasswort = null; throw new Error('Falsches Passwort — bitte erneut versuchen'); }
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
           if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
         })
         .then(function () { zeigeStatus('Konzert gespeichert.', 'erfolg'); return ladeKonzerteVerwaltung(); })
@@ -958,7 +1024,7 @@
       if (!confirm('Konzert wirklich löschen?')) return;
       fetch('/api/konzerte/' + id, { method: 'DELETE', headers: { Authorization: organisatorAuthHeader() } })
         .then(function (res) {
-          if (res.status === 401) { organisatorPasswort = null; throw new Error('Falsches Passwort — bitte erneut versuchen'); }
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
           if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
         })
         .then(function () { zeigeStatus('Konzert gelöscht.', 'erfolg'); return ladeKonzerteVerwaltung(); })
@@ -978,7 +1044,7 @@
         body: JSON.stringify(body),
       })
         .then(function (res) {
-          if (res.status === 401) { organisatorPasswort = null; throw new Error('Falsches Passwort — bitte erneut versuchen'); }
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
           if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
         })
         .then(function () {
@@ -1013,8 +1079,16 @@
       var tbody = document.getElementById('werkeVerwaltungBody');
       tbody.innerHTML = '';
       werkeListe.forEach(function (w) {
+        // Rafi-Feedback 07.09.2026: "bei Freundeskonzert ... die
+        // Werknummer 001 usw." -- als type="number" strippt der Browser
+        // führende Nullen SOFORT beim Tippen/Verlassen des Feldes (native
+        // HTML5-Eigenheit, keine Ausnahme möglich). Deshalb type="text"
+        // mit numerischer Tastatur, Wert beim Rendern auf 3 Stellen
+        // gepolstert (werkKoerper() parst beim Speichern trotzdem korrekt
+        // zurück zu einer Zahl, Number("001") === 1).
         var nummerInput = document.createElement('input');
-        nummerInput.type = 'number'; nummerInput.value = w.nummer;
+        nummerInput.type = 'text'; nummerInput.inputMode = 'numeric';
+        nummerInput.value = String(w.nummer).padStart(3, '0');
         var nameInput = document.createElement('input');
         nameInput.type = 'text'; nameInput.value = w.name;
         var konzertSelect = document.createElement('select');
@@ -1069,7 +1143,7 @@
         body: JSON.stringify(body),
       })
         .then(function (res) {
-          if (res.status === 401) { organisatorPasswort = null; throw new Error('Falsches Passwort — bitte erneut versuchen'); }
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
           if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
         })
         .then(function () { zeigeStatus('Werk gespeichert.', 'erfolg'); return ladeWerkeVerwaltung(); })
@@ -1080,7 +1154,7 @@
       if (!confirm('Werk wirklich löschen?')) return;
       fetch('/api/werke/' + id, { method: 'DELETE', headers: { Authorization: organisatorAuthHeader() } })
         .then(function (res) {
-          if (res.status === 401) { organisatorPasswort = null; throw new Error('Falsches Passwort — bitte erneut versuchen'); }
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
           if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
         })
         .then(function () { zeigeStatus('Werk gelöscht.', 'erfolg'); return ladeWerkeVerwaltung(); })
@@ -1103,7 +1177,7 @@
         body: JSON.stringify(body),
       })
         .then(function (res) {
-          if (res.status === 401) { organisatorPasswort = null; throw new Error('Falsches Passwort — bitte erneut versuchen'); }
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
           if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
         })
         .then(function () {
@@ -1114,6 +1188,106 @@
           zeigeStatus('Werk hinzugefügt.', 'erfolg');
           return ladeWerkeVerwaltung();
         })
+        .catch(function (err) { zeigeStatus(err.message, 'fehler'); });
+    }
+
+    // -- Benutzer:innen (Rafi-Feedback, 07.09.2026: "Es sollte auch
+    // eine Username/Passwort Funktion geben für verschiedene User.",
+    // siehe REFERENCE.md "Mehrere Benutzer:innen" und server/auth.js).
+    // Bewusst OHNE Saison-Bezug -- anders als Räume/Musiker/Konzerte/
+    // Werke oben ist dieser Tab immer bearbeitbar, unabhängig davon,
+    // ob die gewählte Saison Archiv ist. Passwörter werden nie
+    // angezeigt (auch nicht als Hash) -- nur "Passwort ändern" fragt
+    // per window.prompt ein neues ab (analog zum Login-Muster oben),
+    // statt ein Eingabefeld dauerhaft in der Tabelle vorzuhalten.
+    function ladeBenutzerVerwaltung() {
+      return fetch('/api/benutzer', { headers: { Authorization: organisatorAuthHeader() } })
+        .then(function (res) {
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(function (data) {
+          benutzerListe = data.benutzer;
+          zeichneBenutzerVerwaltung();
+        })
+        .catch(function (err) { zeigeStatus(err.message, 'fehler'); });
+    }
+
+    function zeichneBenutzerVerwaltung() {
+      var tbody = document.getElementById('benutzerVerwaltungBody');
+      tbody.innerHTML = '';
+      benutzerListe.forEach(function (b) {
+        var nameTd = document.createElement('td');
+        nameTd.textContent = b.benutzername;
+        var datumTd = document.createElement('td');
+        datumTd.textContent = b.erstelltAm ? new Date(b.erstelltAm).toLocaleDateString('de-CH') : '';
+
+        var btnPasswort = document.createElement('button');
+        btnPasswort.type = 'button'; btnPasswort.textContent = 'Passwort ändern';
+        btnPasswort.addEventListener('click', function () { benutzerPasswortAendern(b.id, b.benutzername); });
+        var btnLoeschen = document.createElement('button');
+        btnLoeschen.type = 'button'; btnLoeschen.textContent = 'Löschen';
+        btnLoeschen.addEventListener('click', function () { benutzerLoeschen(b.id, b.benutzername); });
+
+        var aktionenTd = document.createElement('td');
+        aktionenTd.appendChild(btnPasswort);
+        aktionenTd.appendChild(btnLoeschen);
+
+        var tr = document.createElement('tr');
+        tr.appendChild(nameTd); tr.appendChild(datumTd); tr.appendChild(aktionenTd);
+        tbody.appendChild(tr);
+      });
+    }
+
+    function benutzerHinzufuegen() {
+      var benutzername = document.getElementById('neuerBenutzerName').value;
+      var passwort = document.getElementById('neuerBenutzerPasswort').value;
+      if (!benutzername.trim()) { zeigeStatus('Bitte einen Benutzernamen eingeben.', 'fehler'); return; }
+      if (passwort.length < 6) { zeigeStatus('Passwort muss mindestens 6 Zeichen haben.', 'fehler'); return; }
+      fetch('/api/benutzer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: organisatorAuthHeader() },
+        body: JSON.stringify({ benutzername: benutzername.trim(), passwort: passwort }),
+      })
+        .then(function (res) {
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
+          if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
+        })
+        .then(function () {
+          document.getElementById('neuerBenutzerName').value = '';
+          document.getElementById('neuerBenutzerPasswort').value = '';
+          zeigeStatus('Benutzer:in hinzugefügt.', 'erfolg');
+          return ladeBenutzerVerwaltung();
+        })
+        .catch(function (err) { zeigeStatus(err.message, 'fehler'); });
+    }
+
+    function benutzerPasswortAendern(id, benutzername) {
+      var neuesPasswort = window.prompt('Neues Passwort für "' + benutzername + '" (mind. 6 Zeichen):');
+      if (neuesPasswort === null) return; // abgebrochen
+      if (neuesPasswort.length < 6) { zeigeStatus('Passwort muss mindestens 6 Zeichen haben.', 'fehler'); return; }
+      fetch('/api/benutzer/' + id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: organisatorAuthHeader() },
+        body: JSON.stringify({ passwort: neuesPasswort }),
+      })
+        .then(function (res) {
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
+          if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
+        })
+        .then(function () { zeigeStatus('Passwort geändert.', 'erfolg'); })
+        .catch(function (err) { zeigeStatus(err.message, 'fehler'); });
+    }
+
+    function benutzerLoeschen(id, benutzername) {
+      if (!confirm('Benutzerkonto "' + benutzername + '" wirklich löschen?')) return;
+      fetch('/api/benutzer/' + id, { method: 'DELETE', headers: { Authorization: organisatorAuthHeader() } })
+        .then(function (res) {
+          if (res.status === 401) { organisatorBenutzername = null; organisatorPasswort = null; throw new Error('Falscher Benutzername oder falsches Passwort — bitte erneut versuchen'); }
+          if (!res.ok) return res.json().then(function (b) { throw new Error(b.message || ('HTTP ' + res.status)); });
+        })
+        .then(function () { zeigeStatus('Benutzerkonto gelöscht.', 'erfolg'); return ladeBenutzerVerwaltung(); })
         .catch(function (err) { zeigeStatus(err.message, 'fehler'); });
     }
 
@@ -1290,6 +1464,7 @@
       })
         .then(function (res) {
           if (res.status === 401) {
+            organisatorBenutzername = null;
             organisatorPasswort = null;
             return res.json().then(function () {
               throw new Error('Falsches Passwort — bitte "' + (istNeu ? 'Anlegen' : 'Speichern') + '" erneut klicken');
@@ -1333,6 +1508,7 @@
       })
         .then(function (res) {
           if (res.status === 401) {
+            organisatorBenutzername = null;
             organisatorPasswort = null;
             throw new Error('Falsches Passwort — bitte erneut versuchen');
           }
@@ -1403,6 +1579,7 @@
     document.getElementById('btnMusikerHinzufuegen').addEventListener('click', musikerHinzufuegen);
     document.getElementById('btnKonzertHinzufuegen').addEventListener('click', konzertHinzufuegen);
     document.getElementById('btnWerkHinzufuegen').addEventListener('click', werkHinzufuegen);
+    document.getElementById('btnBenutzerHinzufuegen').addEventListener('click', benutzerHinzufuegen);
     stammdatenTabWaehlen('raeume');
     ladeSaisonen().then(function () {
       return ladeAlleStammdaten();

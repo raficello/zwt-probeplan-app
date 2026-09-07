@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZwT Probeplan</title>
+<style>
+  /* Landingpage (Rafi-Feedback, 07.09.2026: "Man müsste dort eine
+     Landingpage haben, einerseits für alle ohne Passwort zur Ansicht,
+     andererseits zum Admin mit PWD" -- schedule.zwischentoene.com zeigt
+     jetzt auf diesen Server). Bewusst denselben schlichten Stil wie
+     raumplan.html/musikerplan.html/admin.html (system-ui, keine
+     Frameworks) -- diese Seite selbst braucht kein JavaScript, nur
+     zwei klar getrennte Linkgruppen. */
+  body {
+    font-family: system-ui, sans-serif; margin: 0; padding: 1.5rem;
+    max-width: 34rem;
+  }
+  h1 { font-size: 1.3rem; margin: 0 0 0.25rem; }
+  .untertitel { color: #555; font-size: 0.9rem; margin: 0 0 1.5rem; }
+  section {
+    border: 1px solid #ccc; border-radius: 6px; padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+  }
+  section h2 { font-size: 1rem; margin: 0 0 0.35rem; }
+  section p { font-size: 0.85rem; color: #555; margin: 0 0 0.75rem; }
+  .links { display: flex; flex-direction: column; gap: 0.5rem; }
+  .links a {
+    display: inline-block; font-size: 0.95rem; padding: 0.5rem 0.9rem;
+    border: 1px solid #999; border-radius: 4px; text-decoration: none;
+    color: #111; background: #f7f7f7; width: fit-content;
+  }
+  .links a:hover { background: #eee; }
+  .verwaltung .links a { border-color: #666; background: #fff3e0; }
+  .verwaltung .links a:hover { background: #ffe9c7; }
+</style>
+</head>
+<body>
+  <h1>ZwT Probeplan</h1>
+  <p class="untertitel">Proben- und Konzertplanung für ZwT.</p>
+
+  <section class="ansicht">
+    <h2>Ansicht</h2>
+    <p>Offen für alle, ohne Anmeldung.</p>
+    <div class="links">
+      <a href="/raumplan.html">Raumplan</a>
+      <a href="/musikerplan.html">Musikerplan</a>
+    </div>
+  </section>
+
+  <section class="verwaltung">
+    <h2>Verwaltung</h2>
+    <p>Termine anlegen/ändern, Stammdaten pflegen — Anmeldung mit Benutzername + Passwort nötig.</p>
+    <div class="links">
+      <a href="/admin.html">Terminverwaltung</a>
+    </div>
+  </section>
+</body>
+</html>

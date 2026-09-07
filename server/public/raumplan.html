@@ -4,24 +4,62 @@
 <meta charset="utf-8">
 <title>ZwT Probeplan — Raumplan</title>
 <style>
-  body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; }
+  /* Rafi-Feedback, 06.09.2026: "beim Scrollen soll oben immer Tag und
+     Räume ... sichtbar bleiben" + "das Scrollen ist im Moment mühsam,
+     man muss immer 2 mal die Bewegung machen" -- Ursache beider Punkte:
+     bisher scrollte die ganze Seite (body) vertikal, während
+     `.tagesraster` separat nur horizontal scrollte (overflow-x: auto).
+     Zwei ineinander verschachtelte Scroll-Container auf verschiedenen
+     Achsen sind genau das Muster, bei dem Touch-Geräte die erste
+     Wisch-Geste nur zur Achsen-Erkennung nutzen und erst die zweite
+     tatsächlich scrollt. Fix: `.tagesraster` wird zum EINZIGEN
+     Scroll-Container (beide Achsen), body/html scrollen nicht mehr --
+     dafür bekommt body eine feste Höhe (100dvh, mit 100vh-Fallback für
+     ältere Browser) und ist ein Flex-Container, der der Kopfzeile/
+     Toolbar/Legende ihre natürliche Höhe lässt und `.tagesraster` den
+     kompletten Rest zuweist (flex:1 1 auto + min-height:0, sonst würde
+     ein Flex-Kind trotz overflow:auto nicht schrumpfen). Toolbar bleibt
+     dadurch automatisch immer sichtbar (sie scrollt gar nicht erst weg,
+     statt selbst sticky positioniert werden zu müssen), und die
+     Raster-Kopfzeile (Räume) bleibt dank position:sticky INNERHALB des
+     jetzt tatsächlich scrollenden `.tagesraster` oben kleben. */
+  html, body { height: 100%; }
+  body {
+    font-family: system-ui, sans-serif; margin: 0; padding: 1rem; box-sizing: border-box;
+    height: 100vh; height: 100dvh;
+    display: flex; flex-direction: column;
+  }
   h1 { font-size: 1.1rem; margin: 0; }
-  .kopfzeile { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+  .kopfzeile { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap; flex: 0 0 auto; }
   .saison-kopf { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #555; }
-  .toolbar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+  nav { flex: 0 0 auto; }
+  .toolbar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex: 0 0 auto; flex-wrap: wrap; }
   .toolbar button { font-size: 1rem; padding: 0.25rem 0.75rem; cursor: pointer; }
   .toolbar input[type="date"] { font-size: 1rem; padding: 0.25rem; }
-  #status { color: #900; margin-bottom: 0.5rem; }
+  #archivBanner { flex: 0 0 auto; }
+  #status { color: #900; margin-bottom: 0.5rem; flex: 0 0 auto; }
   /* Vertikale Tagesansicht (Rafi-Feedback, 07.09.2026: wie im Original-
      Sheet, Tabs "Raumplan Grafik"/"Musiker Grafik" -- Zeit läuft von
      oben nach unten, Räume/Musiker:innen sind Spalten). Ersetzt die
      bisherige horizontale vis-timeline-Darstellung. */
-  .tagesraster { border: 1px solid #ccc; overflow-x: auto; }
+  .tagesraster {
+    border: 1px solid #ccc; overflow: auto; -webkit-overflow-scrolling: touch;
+    flex: 1 1 auto; min-height: 0;
+  }
   .tagesraster-kopf, .tagesraster-koerper { display: grid; }
+  /* Sticky muss auf der ganzen Kopfzeile sitzen, nicht auf den einzelnen
+     Zellen (Fund beim Testen, 06.09.2026): die Kopfzeile ist nur EINE
+     Grid-Zeile hoch -- sticky-Zellen DARIN können sich nur innerhalb der
+     Höhe ihres eigenen Containers "festkleben", und dieser Container
+     (die Kopfzeile) ist selbst nicht sticky, scrollt also nach der Höhe
+     einer einzigen Zeile normal weg und reisst die "sticky" Zellen mit.
+     Erst wenn die Kopfzeile ALS GANZES sticky ist, bleibt sie oben. */
+  .tagesraster-kopf {
+    position: sticky; top: 0; z-index: 2;
+  }
   .tagesraster-kopf > div {
     padding: 0.35rem 0.5rem; font-weight: bold; font-size: 0.85rem;
     border-right: 1px solid #ccc; border-bottom: 1px solid #ccc; background: #f0f0f0;
-    position: sticky; top: 0; z-index: 2;
   }
   .tagesraster-zeitspalte, .tagesraster-spalte { position: relative; border-right: 1px solid #eee; }
   .tagesraster-stunde-linie { position: absolute; left: 0; right: 0; border-top: 1px solid #eee; }
@@ -30,7 +68,7 @@
     position: absolute; left: 2px; right: 2px; border: 1px solid #888; border-radius: 3px;
     font-size: 0.75rem; line-height: 1.2; padding: 0.15rem 0.3rem; overflow: hidden; box-sizing: border-box;
   }
-  .legende { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; font-size: 0.85rem; }
+  .legende { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; font-size: 0.85rem; flex: 0 0 auto; }
   .legende span.kaestchen { display: inline-block; width: 0.9em; height: 0.9em; border: 1px solid #999; vertical-align: middle; margin-right: 0.3em; }
 </style>
 </head>
@@ -42,7 +80,7 @@
       <select id="saisonAuswahl"></select>
     </div>
   </div>
-  <nav style="font-size:0.9rem;margin-bottom:0.5rem"><a href="/musikerplan.html">Zur Musiker-Ansicht</a> <a href="/admin.html">Zur Terminverwaltung</a></nav>
+  <nav style="font-size:0.9rem;margin-bottom:0.5rem"><a href="/">Startseite</a> <a href="/musikerplan.html">Zur Musiker-Ansicht</a> <a href="/admin.html">Zur Terminverwaltung</a></nav>
   <div class="toolbar">
     <button id="btnZurueck">&larr; Tag zurück</button>
     <select id="datum"></select>
@@ -304,19 +342,27 @@
     datumInput.addEventListener('change', function () {
       ladeTag(datumInput.value);
     });
-    // Phase 7: Schreiben ist per HTTP-Basic-Auth geschützt (siehe
-    // REFERENCE.md/PROGRESS.md "Zugriffsmodell"). Der Benutzername ist
-    // fest auf den Server-Default "organisator" verdrahtet — falls
-    // ORGANISATOR_BENUTZER auf dem Server abweichend gesetzt wird,
-    // funktioniert dieser Button nicht mehr (dokumentierte Annahme).
-    // Passwort wird nur einmal pro Seitenaufruf abgefragt (im Speicher
+    // Phase 7: Schreiben ist per Basic-Auth-artigem Header geschützt
+    // (siehe REFERENCE.md/PROGRESS.md "Zugriffsmodell"). NEU
+    // 07.09.2026 (Rafi-Feedback: "Es sollte auch eine
+    // Username/Passwort Funktion geben für verschiedene User"):
+    // Benutzername + Passwort werden beide abgefragt (statt fest auf
+    // "organisator" verdrahtet), damit sich jede Person mit ihrem
+    // eigenen Konto anmelden kann (siehe server/auth.js, "benutzer"-
+    // Tabelle) — der bisherige gemeinsame Organisator:innen-Zugang
+    // funktioniert weiterhin zusätzlich (Notfallzugang). Beide Werte
+    // werden nur einmal pro Seitenaufruf abgefragt (im Speicher
     // gehalten, nicht persistiert) und bei falscher Eingabe verworfen.
+    var organisatorBenutzername = null;
     var organisatorPasswort = null;
     function organisatorAuthHeader() {
-      if (organisatorPasswort === null) {
-        organisatorPasswort = window.prompt('Organisator:innen-Passwort:') || '';
+      if (organisatorBenutzername === null) {
+        organisatorBenutzername = window.prompt('Benutzername:') || '';
       }
-      return 'Basic ' + btoa('organisator:' + organisatorPasswort);
+      if (organisatorPasswort === null) {
+        organisatorPasswort = window.prompt('Passwort:') || '';
+      }
+      return 'Basic ' + btoa(organisatorBenutzername + ':' + organisatorPasswort);
     }
 
     document.getElementById('btnSperren').addEventListener('click', function () {
@@ -326,8 +372,10 @@
       fetch('/api/stand/sperren?saison=' + aktuelleSaison.jahr, { method: 'POST', headers: { Authorization: organisatorAuthHeader() } })
         .then(function (res) {
           if (res.status === 401) {
-            organisatorPasswort = null; // falsches Passwort -> beim nächsten Versuch neu fragen
-            throw new Error('Falsches Passwort');
+            // falsche Eingabe -> beim nächsten Versuch beides neu fragen
+            organisatorBenutzername = null;
+            organisatorPasswort = null;
+            throw new Error('Falscher Benutzername oder falsches Passwort');
           }
           if (!res.ok) throw new Error('HTTP ' + res.status);
           return res.json();

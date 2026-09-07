@@ -34,24 +34,65 @@
     return { top: top, hoehe: hoehe };
   }
 
+  function pad2(n) {
+    return (n < 10 ? '0' : '') + n;
+  }
+
+  // Formatiert ein Date wieder als lokale ISO-Zeit OHNE Zeitzone (Gegenstück
+  // zu `new Date(lokalesIso)`), damit abrundenAufStunde/aufrundenAufStunde
+  // dasselbe zeitzonen-unabhängige Format wie der Rest dieser Datei liefern.
+  function zuLokalemIso(d) {
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) +
+      'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+  }
+
+  function abrundenAufStunde(iso) {
+    var d = new Date(iso);
+    d.setMinutes(0, 0, 0);
+    return zuLokalemIso(d);
+  }
+
+  function aufrundenAufStunde(iso) {
+    var d = new Date(iso);
+    if (d.getMinutes() !== 0 || d.getSeconds() !== 0 || d.getMilliseconds() !== 0) {
+      d.setHours(d.getHours() + 1);
+    }
+    d.setMinutes(0, 0, 0);
+    return zuLokalemIso(d);
+  }
+
   /**
-   * Ermittelt das anzuzeigende Zeitfenster für einen Tag: mindestens
-   * `minStart`–`minEnde` (Standard-Sichtfenster, z.B. "07:00"–"23:00"),
-   * aber erweitert um alle tatsächlichen Termine, damit nichts
-   * ausserhalb des Fensters abgeschnitten wird (z.B. ein sehr früher
-   * Soundcheck oder ein Termin bis nach Mitternacht-nah). `items` sind
-   * Objekte mit `start`/`end` (ISO-Strings, `end` optional bei
-   * Punkt-Terminen).
+   * Ermittelt das anzuzeigende Zeitfenster für einen Tag: NUR die
+   * tatsächlich gebrauchten Stunden (Rafi-Feedback, 06.09.2026: "nicht
+   * vor dem ersten und nach dem letzten Termin") -- also die Spanne vom
+   * frühesten Termin-Anfang bis zum spätesten Termin-Ende, auf volle
+   * Stunden auf-/abgerundet (damit die Stundenraster-Linien/-Labels
+   * sinnvoll an den Rändern stehen, statt eine stundenlose Teilzeile am
+   * Rand zu erzeugen). `minStart`/`minEnde` gelten NUR noch als
+   * Ersatzwert für einen Tag OHNE jeden Termin (sonst wäre das Raster
+   * leer) -- sie polstern ein Fenster mit vorhandenen Terminen nicht
+   * mehr künstlich auf. `items` sind Objekte mit `start`/`end`
+   * (ISO-Strings, `end` optional bei Punkt-Terminen).
    */
   function ermittleFenster(datum, items, minStart, minEnde) {
-    var fensterStart = datum + 'T' + (minStart || '07:00:00');
-    var fensterEnde = datum + 'T' + (minEnde || '23:00:00');
-    (items || []).forEach(function (item) {
-      if (item.start && item.start < fensterStart) fensterStart = item.start;
+    var vorhandene = (items || []).filter(function (item) { return !!item.start; });
+    if (vorhandene.length === 0) {
+      return {
+        start: datum + 'T' + (minStart || '07:00:00'),
+        ende: datum + 'T' + (minEnde || '23:00:00'),
+      };
+    }
+    var fruehesterStart = vorhandene[0].start;
+    var spaetestesEnde = vorhandene[0].end || vorhandene[0].start;
+    vorhandene.forEach(function (item) {
+      if (item.start < fruehesterStart) fruehesterStart = item.start;
       var ende = item.end || item.start;
-      if (ende && ende > fensterEnde) fensterEnde = ende;
+      if (ende > spaetestesEnde) spaetestesEnde = ende;
     });
-    return { start: fensterStart, ende: fensterEnde };
+    return {
+      start: abrundenAufStunde(fruehesterStart),
+      ende: aufrundenAufStunde(spaetestesEnde),
+    };
   }
 
   /**
@@ -76,6 +117,8 @@
     berechnePosition: berechnePosition,
     ermittleFenster: ermittleFenster,
     stundenraster: stundenraster,
+    abrundenAufStunde: abrundenAufStunde,
+    aufrundenAufStunde: aufrundenAufStunde,
   };
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = exportsObj;
@@ -83,5 +126,7 @@
     root.berechnePosition = berechnePosition;
     root.ermittleFenster = ermittleFenster;
     root.stundenraster = stundenraster;
+    root.abrundenAufStunde = abrundenAufStunde;
+    root.aufrundenAufStunde = aufrundenAufStunde;
   }
 })(typeof window !== 'undefined' ? window : this);

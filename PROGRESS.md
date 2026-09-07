@@ -5,128 +5,121 @@ https://claude.ai/code/artifact/f8082705-72cd-41e7-b8c7-63f1ff74fe81
 
 Immer zuerst diese Datei lesen, dann REFERENCE.md (Abschnitt 13: Fallstricke).
 
-## ✅ Code-Verlust vom 06.09.2026 — VOLLSTÄNDIG BEHOBEN
+## ✅ Kritischer Befund 07.09.2026 — Sandbox war leer, DRITTES Mal — BEHOBEN, Code wieder da
 
-Nächtliche Sitzung fand `/home/claude/zwt-probeplan-app` komplett leer
-vor (Sandbox-Neubereitstellung). NOCH IN DERSELBEN NACHT hat Rafi zwei
-eigene ZIP-Backups vom 05.09.2026 beigesteuert:
-1. `zwtprobeplanappfull_22.51.19.zip` — Phase 1–7 (Schema, Migration,
-   CRUD-API, Konfliktprüfung, Raumplan-/Musiker-Ansicht, Stand sperren,
-   PDF-Export, Organisator:innen-Login).
-2. `zwtprobeplanapp.zip` (später am selben Abend) — zusätzlich der
-   komplette Phase-8-Code: `server/public/admin.html`,
-   `raumTagErlaubt()` in `validation.js`, `GET /api/raeume` in
-   `index.js`, `server/test/index.test.js`, Nav-Links, Date-Objekt-
-   Regressionstest.
+Nächtliche Sitzung (07.09.2026, Scheduled Task, niemand anwesend) fand
+`/home/claude/zwt-probeplan-app` komplett leer vor (drittes Mal nach
+04./05.09. und 05./06.09.). Wie vorgeschrieben wurde nichts blind
+nachgebaut, nur der Befund dokumentiert und eine Push-Benachrichtigung
+geschickt (Details dazu weiter unten archiviert).
 
-Beide zurückgespielt und verifiziert: **54 Tests grün** (13
-`migrate/test` + 41 DB-freie `server/test`, inkl. 5 neuer
-`raumTagErlaubt`-Tests). Der gesamte Code bis einschliesslich Phase 8
-ist damit wiederhergestellt — nichts mehr fehlt.
+**Behoben, selber Tag, interaktive Folge-Sitzung**: Rafi hat sein
+eigenes ZIP-Backup `zwtprobeplanapp_20260906_1600UTC.zip` hochgeladen
+(Stand 06.09.2026, 16:00 UTC — neuer als das zuvor als "letzte
+bekannte Kopie" vermerkte 08:02-UTC-ZIP). Code (`db/`, `deploy/`,
+`migrate/`, `server/` inkl. `server/public/admin.html`) wurde daraus in
+diese Sandbox zurückgespielt und committet (README/REFERENCE/PROGRESS.md
+NICHT aus dem ZIP übernommen, der hier fortgeschriebene, aktuellere
+Doku-Stand bleibt massgeblich). Tests verifiziert:
+`node --test migrate/test/*.test.js server/test/*.test.js` → 128 Tests,
+**108 pass, 0 fail, 20 skipped** (die übersprungenen sind vermutlich
+DB-/Netzwerk-abhängig und laufen ohne echtes Postgres nicht). Damit ist
+der Code-Stand dieser Sandbox wieder vollständig (Phase 1–8).
 
-**Lehre für künftige Sitzungen**: bei Datenverlust IMMER zuerst fragen,
-ob Rafi ein aktuelles ZIP hat (er sichert offenbar öfter, als früher
-angenommen), bevor Code blind aus REFERENCE.md nachgebaut wird.
-
-**GitHub**: Rafi hat die Repo-URL mitgeteilt
-(`https://github.com/raficello/zwt-probeplan-app.git`, dauerhaft in
-README.md). Remote gesetzt, Push mehrfach versucht (auch nachdem Rafi
-GitHub in den Claude-Einstellungen verbunden hat, auch in einer neuen
-nächtlichen Sitzung) — schlägt jedes Mal identisch fehl: "access denied
-by the git proxy: raficello/zwt-probeplan-app is not in this session's
-authorized repository set... Use add_repo to request access."
-
-**Ursache gefunden (07.09.2026): bestätigter Anthropic-seitiger Bug,
-nicht unser Konfigurationsfehler.** Öffentliches GitHub-Issue
-[anthropics/claude-code#76248](https://github.com/anthropics/claude-code/issues/76248)
-("Cloud/Cowork sessions: git proxy now blocks all pushes — 'not in this
-session's authorized repository set'") beschreibt exakt denselben
-Fehler, mit denselben Umgebungsvariablen, die auch in dieser Sitzung
-gesetzt sind (`CCR_TEST_GITPROXY=1`, `CCR_AGENT_PROXY_ENABLED=1`,
-`CCR_UPSTREAM_PROXY_ENABLED=1`). Laut Issue: server-seitiger Rollout
-seit 10.07.2026, betrifft alle Cowork-Sitzungen, blockiert NUR Pushes
-(Lesen/Klonen funktioniert weiterhin), kein `add_repo`-Tool oder UI in
-Cowork tatsächlich erreichbar, kein bekannter Workaround, kein
-Anthropic-Statement/Fix/ETA (Stand 07.09.2026). Ein eigener `add_repo`-
-Aufruf und die Suche nach einer entsprechenden UI/Einstellung wurden in
-dieser Sitzung ergebnislos versucht (kein passendes Tool, kein Skript
-im Sandbox-Dateisystem, GitHub taucht auch nicht in der normalen
-Connector-Liste auf).
-
-**Konsequenz**: Push bleibt bis zu einem Anthropic-seitigen Fix
-blockiert, unabhängig davon, was Rafi in seinen Einstellungen
-konfiguriert. Workaround bleibt wie bisher: Rafi lädt bei Bedarf
-manuell ein ZIP hoch bzw. pusht selbst von seinem Rechner aus (dort
-funktioniert `git push` normal, da kein Cowork-Sitzungs-Proxy
-zwischengeschaltet ist). Kein weiterer Push-Versuch pro Sitzung nötig,
-bis das Issue als behoben gemeldet wird — stattdessen ggf. Rafi bitten,
-lokal zu pushen, oder den Status des Issues periodisch zu prüfen.
-
-**Korrektur zum update_trigger-"Grössenlimit"** (fälschlich in einer
-früheren Fassung dieser Nacht angenommen): der Fehler "result exceeds
-maximum allowed tokens" bei `update_trigger`-Aufrufen bedeutet NICHT,
-dass das Update fehlgeschlagen ist — nur die Bestätigungsantwort ist zu
-gross zum Anzeigen, das Update selbst geht durch (mehrfach per
-`list_triggers` verifiziert). Bei diesem Fehler künftig: als Erfolg
-behandeln, nicht panisch kürzen oder wiederholen.
-
-**ZIP-Dateinamen**: Rafi hat gebeten, künftig immer den exakten
-Dateinamen (mit Zeitstempel) in der Begleitnachricht zu nennen, da
-Downloads bei ihm nicht zuverlässig im normalen Downloads-Ordner landen
-— siehe README.md Arbeitsweise Punkt 8.
+**Bleibt trotzdem wichtig**: `git push` aus der Sandbox funktioniert
+weiterhin nicht (siehe Abschnitt "Git-Push aus der Sandbox: ENDGÜLTIG
+GEKLÄRT" unten) — ein erneuter Sandbox-Reset ist also weiterhin möglich
+und würde den Code wieder verlieren, wenn bis dahin kein frisches ZIP
+verschickt wurde. Deshalb JETZT sofort ein aktuelles ZIP an Rafi
+schicken (siehe "Letzte Sicherung" unten), nicht abwarten.
 
 ## Phasenstatus
 
+**Hinweis**: Code-Stand 07.09.2026 (nachmittags) wieder vollständig in
+dieser Sandbox vorhanden (aus Rafis ZIP wiederhergestellt, s.o.), Tests
+grün. Fachlicher Stand unverändert gegenüber 06.09.2026.
+
 - **Phase 0** (Vorbereitung): [x] GitHub-Repo + URL bekannt, Remote
-  gesetzt, Push noch blockiert (Repo-Autorisierung, siehe oben), [x] VPS
+  gesetzt, Push aus Sandbox endgültig als nicht funktionsfähig geklärt
+  (Workflow: ZIP → Rafi pusht lokal, siehe unten), [x] VPS
   bestellt/aktiv (`83.228.213.202`, ubuntu, Ubuntu 26.04), [ ] Swiss
-  Backup (Rafi), [ ] Domain (Rafi, Caddyfile hat IP-Übergangslösung),
-  [x] Zugriffsmodell A entschieden (05.09.2026).
+  Backup (Rafi), **[x] Domain bekannt** (`schedule.zwischentoene.com`,
+  zeigt bereits auf den VPS, seit 07.09.2026 in `deploy/Caddyfile`
+  eingetragen — siehe REFERENCE.md Abschnitt 19), [x] Zugriffsmodell A
+  entschieden (05.09.2026), **[x] Mehrere Benutzer:innen ergänzt**
+  (07.09.2026, siehe REFERENCE.md Abschnitt 18).
 - **Phase 1** (Datenmodell/Migration): [x] `db/schema.sql`, `migrate/*`,
-  13 Tests grün. Offen: `raum_puffer`-Befüllung sobald echter Export
-  vorliegt.
-- **Phase 2** (Server-Grundgerüst): [x] `deploy/*`, läuft unverändert
-  auf VPS. Backup-Cronjob wartet auf Swiss Backup.
+  Code vorhanden und Tests grün.
+- **Phase 2** (Server-Grundgerüst): [x] `deploy/*`, lief unverändert auf
+  VPS. Backup-Cronjob wartet auf Swiss Backup.
 - **Phase 3** (Terminverwaltung-API): [x] CRUD `/api/termine`,
-  Konfliktprüfung, Kzt-Regel, Wochentags-Raumbeschränkung
-  (`raumTagErlaubt()`, ursprünglich in Phase 3 vergessen, in Phase 8
-  nachgerüstet — REFERENCE.md Abschnitt 13). Raumpuffer-Matrix weiterhin
-  leer (Default 0 Min).
+  Konfliktprüfung, Kzt-Regel, Wochentags-Raumbeschränkung. Raumpuffer-
+  Matrix weiterhin leer (Default 0 Min).
 - **Phase 4** (Raumplan/Musiker-Ansicht): [x] vis-timeline,
   `raumplan.html`, `musikerplan.html`, `musiker-logik.js`, `color.js`,
-  Nav-Links zu allen drei Seiten. Bekannte Einschränkung: Ansicht zeigt
-  nur Räume/Musiker mit Termin an dem Tag; `GET /api/musiker` fehlt
-  weiterhin (kein Blocker).
+  Nav-Links (jetzt auch zur neuen Startseite `/`) zu allen Seiten.
+  `GET /api/musiker` fehlt weiterhin (kein Blocker).
 - **Phase 5** (Stand sperren): [x] `GET/POST /api/stand*`, SQL-basierte
   Änderungsmarkierung.
 - **Phase 6** (PDF-Export): [x] Gesamtplan+Musikerplan-PDFs (`pdfkit`).
-  QR/Dropbox vermutlich unnötig.
-- **Phase 7** (Zugriff/Login): [x] Passwortschutz für Schreiben
-  (`auth.js`), von Rafi bestätigt.
+- **Phase 7** (Zugriff/Login): [x] Schreiben geschützt — bisheriger
+  gemeinsamer Organisator:innen-Zugang (`auth.js`, produktiv auf VPS,
+  von Rafi bestätigt) PLUS seit 07.09.2026 echte Benutzerkonten pro
+  Person (siehe REFERENCE.md Abschnitt 18).
 - **Phase 8** (Parallelbetrieb/Testlauf): [x] Terminverwaltung
-  (`admin.html`) fertig gebaut, **auf dem VPS ausgerollt und von Rafi
-  bestätigt** (06.09.2026: Speichern/Löschen funktioniert produktiv).
-  [x] Wochentags-Raumbeschränkung, `GET /api/raeume`, Raum-Produktivdaten
-  (`db/seed-raeume.sql`). [x] Datum als Festival-Tage-Auswahl überall
-  (nicht nur Formular, auch Toolbar-Navigation aller 3 Seiten). [x]
-  Werk-Autocomplete + Teilnehmer-Vorschlag (Abschnitt 16,
-  `db/migration-werke.sql` + `db/seed-werke-2026.sql`). **Alles oben
-  von Rafi bestätigt (07.09.2026): "Funktioniert alles."**
-  [x] 07.09.2026, drittes Feedback-Paket, **auf dem VPS ausgerollt und
-  von Rafi bestätigt** ("Funktioniert alles"): Zeit-Feld akzeptiert
-  jetzt auch "1230"/"930" ohne Doppelpunkt (Abschnitt 15); admin.html
-  fragt Passwort sofort beim Laden ab statt erst beim Speichern
-  (`GET /api/auth/pruefen`, Abschnitt 14); Raumplan-/Musikerplan-
-  Ansicht komplett auf eigene vertikale Tagesansicht umgestellt
-  (`tagesraster.js`, Abschnitt 6), `vis-timeline`-Abhängigkeit entfernt.
-  [x] 07.09.2026, Saison-Verwaltung (Abschnitt 17) — auf Rafis
-  Bestätigung ("ja mache es") umgesetzt, lokal vollständig per echtem
-  Postgres+Playwright verifiziert (12 neue Tests + manueller Workflow
-  neue-Saison-anlegen→aktivieren→alte-wird-Archiv), noch NICHT auf dem
-  VPS ausgerollt. [ ] Der eigentliche Parallelbetrieb/Testlauf mit
-  einer realen Probenwoche hat noch nicht begonnen — nächster Schritt,
-  sobald die Saison-Verwaltung auf dem VPS bestätigt ist.
+  (`admin.html`), vollständige Saison-Verwaltung + Konzert-/Werkliste
+  mit Autocomplete (REFERENCE.md Abschnitte 16+17) — **läuft laut Rafi
+  bereits auf dem VPS** (heute bestätigt, war zuvor unklar). NEU seit
+  heute Nachmittag, **NOCH NICHT auf VPS ausgerollt**: Mehrere
+  Benutzer:innen (Abschnitt 18) + Landingpage/Domain (Abschnitt 19) —
+  siehe "Rollout-Anleitung für Rafi" unten. Der eigentliche
+  Parallelbetrieb/Testlauf mit einer realen Probenwoche hat noch nicht
+  begonnen.
 - **Phase 9** (Umstieg): noch nicht begonnen.
+
+**Nächster inhaltlicher Schritt**: Rafi rollt die heutigen Ergänzungen
+(Mehrere Benutzer:innen, Landingpage, Domain in Caddyfile) auf den VPS
+aus — siehe Abschnitt "Rollout-Anleitung für Rafi" unten für die
+genauen Schritte (nur EINE neue Migration, alles andere ist Code-
+Update + Caddy-Neustart). Danach: eigenes Konto anlegen (statt weiter
+den gemeinsamen Zugang zu nutzen), dann Parallelbetrieb/Testlauf mit
+realer Probenwoche beginnen (oder Phase 9, je nach Rafis Einschätzung).
+
+## 🚀 Rollout-Anleitung für Rafi: heutige Ergänzungen (07.09.2026) auf den VPS bringen
+
+Betrifft: Mehrere Benutzer:innen (REFERENCE.md Abschnitt 18),
+Landingpage (Abschnitt 19), Domain in `deploy/Caddyfile` (Abschnitt 19).
+Saison-Verwaltung/Werkliste sind laut dir bereits auf dem VPS — dafür
+ist NICHTS mehr zu tun.
+
+1. Neuestes ZIP entpacken und ins Projektverzeichnis auf dem VPS
+   kopieren (Code-Dateien ersetzen: `server/`, `deploy/Caddyfile`,
+   `db/migration-benutzer.sql` ist neu).
+2. EINE neue, idempotente Migration anwenden (kann gefahrlos auch
+   nochmal laufen, falls unsicher ob schon getan):
+   ```
+   cd deploy
+   set -a; source .env; set +a
+   docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < ../db/migration-benutzer.sql
+   ```
+3. App-Container neu bauen (neue Datei `server/db.js`, geänderte
+   `index.js`/`auth.js`/`queries.js`, neues `server/public/index.html`):
+   ```
+   docker compose up -d --build app
+   ```
+4. Caddy neu starten, damit die geänderte Domain in `Caddyfile` greift
+   (kein Rebuild nötig, die Datei ist nur eingehängt):
+   ```
+   docker compose restart caddy
+   ```
+5. Prüfen: `https://schedule.zwischentoene.com/` sollte die neue
+   Landingpage zeigen (Caddy braucht evtl. ein bis zwei Minuten fürs
+   Let's-Encrypt-Zertifikat beim ersten Mal). Mit dem bisherigen
+   gemeinsamen Passwort in `admin.html` einloggen, unter dem neuen Tab
+   "Benutzer:innen" ein eigenes Konto anlegen, damit abmelden/neu laden
+   und mit dem eigenen Konto einloggen testen.
+6. Danach in `PROGRESS.md` (hier) vermerken, dass ausgerollt ist — oder
+   Rafi sagt es einer Sitzung, die es einträgt.
 
 ## Offene Fragen / Annahmen
 
@@ -138,125 +131,99 @@ Downloads bei ihm nicht zuverlässig im normalen Downloads-Ordner landen
 - vis-timeline statt FullCalendar (MIT-Lizenz vs. Premium-Plugin).
 - Aud (Spalte D) vs. Ort (Spalte I) im Master-Sheet ungeklärt — vorläufig
   zwei unabhängige Felder auf `raeume`.
-- **Pufferzeiten-Matrix-Quelle gefunden** (06.09.2026, Tab "Config" des
-  Google Sheets), in `db/seed-raeume.sql` eingetragen — noch NICHT auf
-  dem VPS angewendet (Rafi muss das Skript ausführen). Dabei entdeckt:
-  die Konfliktprüfung wertet die Matrix nicht raumübergreifend aus
-  (fragt nur denselben Raum ab) — mit den echten, fast durchweg
-  nichtleeren Werten wirkt sich das so aus, dass praktisch nie ein
-  Pufferzeit-Konflikt gemeldet wird. Muss nachgezogen werden
-  (REFERENCE.md Abschnitt 2), kein Blocker für den Testlauf.
-- Festival-Tage 2026 bekannt (06.09.2026, aus Google Sheet): Mo.
-  12.10.2026 bis So. 18.10.2026. In `admin.html` als Datums-Auswahlliste
-  hinterlegt (fest im Code, keine Server-Quelle dafür — bei Bedarf
-  später aus der DB oder Config ableiten).
-- Kein echter Sheet-Export für die Migration (`migrate/`) vorhanden —
-  nutzt weiterhin Beispieldaten. Google-Sheet-Zugriff via Google-Drive-
-  Connector ist inzwischen möglich (06.09.2026, siehe oben) — bei Bedarf
-  künftig direkt daraus exportieren statt manuell.
+- Pufferzeiten-Matrix-Quelle nicht lokalisiert — Default 0 Min.
+- Kein echter Sheet-Export vorhanden — Migration nutzt Beispieldaten.
 - Unbekannte Raumnamen im Export: Warnung + Auto-Raum statt Abbruch.
 - Backup-Ziel noch nicht bestellt.
-- `git push` schlägt mit 403 fehl — Repo-Autorisierung fehlt für diese
-  Session (siehe oben). Nächste (neue) Sitzung sollte es erneut
-  versuchen, nicht mehrfach pro Sitzung.
-- Prompt-Einbettung schützt nur die 3 Markdown-Dateien vor leerer
-  Sandbox, NICHT den Programmcode — Rafis eigene ZIP-Backups sind aber
-  ein funktionierender Rettungsweg (siehe oben).
+- Saison-Verwaltung + Konzert-/Werkliste (REFERENCE.md Abschnitte
+  16+17): **GEKLÄRT** — läuft laut Rafi bereits auf dem VPS.
+- Mehrere Benutzer:innen (Abschnitt 18): KEIN Rollen-/Rechte-System
+  (jedes Konto = volle Schreibrechte, wie bisher "der Organisator") —
+  Annahme, da Rafis Feedback nur nach verschiedenen Logins fragte,
+  nicht nach unterschiedlichen Berechtigungsstufen. Bei Bedarf später
+  nachrüstbar (neue Spalte `benutzer.rolle` o.ä.).
+- Benutzername ändern: nicht vorgesehen (nur Passwort ändern oder
+  Konto löschen + neu anlegen) — Annahme, da nicht explizit gefordert.
+- Kein Schutz gegen Löschen des letzten/eigenen Benutzerkontos beim
+  Löschen — der Notfallzugang (ORGANISATOR_PASSWORT) bleibt so oder so
+  als Absicherung bestehen, deshalb bewusst nicht extra abgefragt.
+- `git push` aus der Sandbox: GEKLÄRT, siehe Abschnitt "Git-Push aus
+  der Sandbox: ENDGÜLTIG GEKLÄRT" oben — funktioniert nicht und wird
+  nicht mehr versucht, Workflow ist jetzt dauerhaft ZIP → Rafi pusht
+  lokal.
+- Prompt-Einbettung schützt die 3 Markdown-Dateien zuverlässig (dritter
+  Erfolg in Folge), NICHT den Programmcode — siehe kritischer Befund
+  oben. Das ist jetzt ein bestätigtes, wiederkehrendes strukturelles
+  Problem, keine Ausnahme mehr.
 - `update_trigger`s "exceeds maximum allowed tokens"-Fehler bedeutet
-  NICHT, dass das Update fehlschlug — siehe oben.
-- **Werk-Autocomplete + Teilnehmer-Vorschlag: erledigt** (06.09.2026).
-  Rafi hat den kompletten Excel-Export hochgeladen, per `openpyxl`
-  gelesen (zuverlässiger als der Google-Drive-Connector, der den Tab
-  "config" nicht vollständig lieferte). Details: REFERENCE.md
-  Abschnitt 16. 1 Werk ("502a", nicht-numerischer Code) bewusst nicht
-  importiert — falls das gebraucht wird, müsste `werke.nummer` von
-  `int` auf `text` geändert werden (kleiner Nacharbeitsposten, kein
-  Blocker).
-- **Werk-Autocomplete auf VPS noch nicht sichtbar (07.09.2026)**: Rafi
-  meldet, dass das Feature nach der Deploy-Anleitung nicht funktioniert.
-  Diagnose (Details REFERENCE.md, neuer Abschnitt am Ende von 16):
-  vermutlich hat ein scp-Befehl mit mehreren Quelldateien in einem
-  Aufruf die Unterordnerstruktur nicht erhalten, wodurch `admin.html`
-  nicht in `server/public/` gelandet ist und die alte Version aktiv
-  blieb. Diese Sandbox hat KEINEN SSH-Zugriff auf den VPS (kein Key
-  hinterlegt) — die Prüfung/der Fix muss von Rafis Rechner aus laufen.
-  Korrigierte, selbst-verifizierende Befehlsfolge (jede Datei EINZELN
-  kopieren, Zielpfad inkl. Dateiname):
-  ```
-  cd "/Users/rafi/Library/CloudStorage/Dropbox/Apps/ZWT Claude Schedule"
-
-  scp server/index.js ubuntu@83.228.213.202:~/zwt-probeplan-app/server/index.js
-  scp server/queries.js ubuntu@83.228.213.202:~/zwt-probeplan-app/server/queries.js
-  scp server/public/admin.html ubuntu@83.228.213.202:~/zwt-probeplan-app/server/public/admin.html
-  scp db/migration-werke.sql ubuntu@83.228.213.202:~/zwt-probeplan-app/db/migration-werke.sql
-  scp db/seed-werke-2026.sql ubuntu@83.228.213.202:~/zwt-probeplan-app/db/seed-werke-2026.sql
-
-  ssh ubuntu@83.228.213.202
-  cd ~/zwt-probeplan-app
-
-  # Verifikation 1: Zahl > 0 bedeutet, die neue admin.html ist wirklich angekommen
-  grep -c "werkVorschlaege" server/public/admin.html
-
-  cd deploy
-  docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < ../db/migration-werke.sql
-  docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < ../db/seed-werke-2026.sql
-  docker compose up -d --build app
-
-  # Verifikation 2: sollte "Mozart Duo B-Dur" und teilnehmer ["DU","YL"] zeigen
-  sleep 5
-  docker compose exec app node -e "require('http').get('http://localhost:3000/api/werke/vorschlaege?q=401', r => { let d=''; r.on('data', c => d+=c); r.on('end', () => console.log(d)); })"
-  ```
-  Danach im Browser Hard-Refresh (Cmd+Shift+R), damit kein alter
-  admin.html-Cache-Stand angezeigt wird, und "401" im Werk-Feld
-  ausprobieren. Noch nicht von Rafi bestätigt — nächster Schritt.
-- **Saison-Verwaltung: UMGESETZT (07.09.2026)**. Zuerst (06.09.2026)
-  bewusst auf nach dem Festival vertagt (grosse, invasive Änderung so
-  kurz vor dem Festival), dann auf Rafis explizite Bestätigung ("ja
-  mache es") doch umgesetzt. Volle Doku: REFERENCE.md Abschnitt 17.
-  Kurzfassung: neue Tabelle `saisons`, alle Saison-abhängigen Tabellen
-  (`raeume`/`musiker`/`termine`/`konfiguration`/`konzerte`/`werke`/
-  `werk_vorlagen`) bekommen `saison_id` (`db/migration-saisons.sql`,
-  ALTER-basiert, bestehende 2026er-Daten per Backfill zugeordnet,
-  nichts gelöscht). Genau eine Saison ist "aktiv" (schreibbar), alle
-  anderen automatisch Archiv (nur lesbar) — DB-seitig per partiellem
-  Unique-Index erzwungen. Jahres-Dropdown auf allen 3 Seiten, neue
-  Saison anlegen + aktivieren über einen "Saison-Verwaltung…"-Bereich
-  in `admin.html`.
-  **Nachtrag, selber Tag (07.09.2026), auf weiteres Rafi-Feedback**:
-  Saison-Wähler auf allen 3 Seiten neben den Titel verschoben (nicht
-  mehr in der Toolbar); "Saison-Verwaltung…" um vier CRUD-Tabs
-  erweitert -- Räume/Musiker:innen/Konzerte/Werke der gewählten Saison
-  lassen sich jetzt DIREKT in der Oberfläche anlegen/bearbeiten/löschen
-  (bewusst ohne die Termine dort zu zeigen), das bisher geplante reine
-  Seed-Skript-Muster ist damit überholt/ergänzt -- SQL-Skripte bleiben
-  trotzdem nützlich für grosse Erstbefüllungen (Bulk-Import). Zusätzlich
-  `musikerplan.html`: Musiker-Kürzel-Feld ist jetzt eine
-  Mehrfachauswahl-Liste (Kürzel + Vollname) statt Freitext, lädt bei
-  Auswahländerung automatisch neu. 18 neue automatisierte Tests +
-  ausführliche manuelle Verifikation per echtem Postgres/Playwright
-  (neue Saison anlegen → aktivieren → alte Saison wird automatisch
-  Archiv, Schreibversuche dort geben 403, Lesen bleibt möglich; Raum/
-  Musiker:in/Konzert/Werk inkl. Teilnehmer über die neue Oberfläche
-  angelegt/geändert/gelöscht, neues Werk sofort im bestehenden
-  Werk-Autocomplete nutzbar, Lösch-Blockade bei referenzierter Person
-  sichtbar bestätigt). Dabei einen echten Bug per Test gefunden+behoben:
-  eine einzelne "SET aktiv = (id = $1)"-Anweisung zum Umschalten
-  verletzte je nach Zeilen-Reihenfolge den Unique-Index — jetzt zwei
-  Anweisungen in einer Transaktion (siehe REFERENCE.md Abschnitt 17/13).
-  Volle Doku: REFERENCE.md Abschnitt 17.
-  **Für den VPS-Deploy diesmal WICHTIG**: zusätzlich zu den Code-
-  Dateien muss `db/migration-saisons.sql` NACH `db/migration-werke.sql`
-  UND VOR `db/seed-raeume.sql`/`db/seed-werke-2026.sql` laufen (diese
-  beiden Seed-Skripte wurden ebenfalls angepasst und würden ohne die
-  Migration jetzt fehlschlagen, falls sie je erneut ausgeführt werden
-  — auf dem Produktiv-VPS sind sie aber schon gelaufen, müssen NICHT
-  wiederholt werden, nur die neue Migration). **Noch NICHT auf dem VPS
-  ausgerollt** (Stand dieses Eintrags) — nächster Schritt.
+  NICHT, dass das Update fehlschlug (mehrfach per `list_triggers`
+  verifiziert) — als Erfolg behandeln, nicht wiederholen/kürzen.
 
 ## Letzte Sicherung (ZIP an Nutzer per SendUserFile)
 - 03.09.2026, 04.09.2026; danach unregelmässig während Tagsitzungen.
 - 06.09.2026, 07:12 UTC: `zwt-probeplan-app-docs-only.zip` (nur Doku).
 - 06.09.2026, 07:34 UTC: `zwt-probeplan-app_2026-09-06_0734UTC.zip`
   (Phase 1–7 wiederhergestellt).
-- 06.09.2026, 08:02 UTC: **`zwt-probeplan-app_2026-09-06_0802UTC.zip`**
-  — Phase 1–8 komplett, 54 Tests grün. Aktuellster Stand.
+- 06.09.2026, 08:02 UTC: `zwt-probeplan-app_2026-09-06_0802UTC.zip`
+  — Phase 1–8 komplett, 54 Tests grün.
+- **06.09.2026, 16:00 UTC** (`zwtprobeplanapp_20260906_1600UTC.zip`):
+  Rafis EIGENES ZIP, von ihm am 07.09.2026 hochgeladen — neuerer Stand
+  als das 08:02-UTC-ZIP, wurde zur Wiederherstellung des Codes in dieser
+  Sandbox verwendet (siehe "Kritischer Befund" oben).
+- 07.09.2026, 14:52 UTC: `zwt-probeplan-app_2026-09-07_1452UTC.zip`
+  — Rückversand des wiederhergestellten Standes (Phase 1–8, Code +
+  aktualisierte Doku) an Rafi, als Sicherung unmittelbar nach der
+  Wiederherstellung (siehe README.md Punkt 4).
+- 07.09.2026, 15:30 UTC: `zwt-probeplan-app_2026-09-07_1530UTC.zip`
+  — Mehrere Benutzer:innen (REFERENCE.md Abschnitt 18) + Landingpage/
+  Domain (Abschnitt 19) ergänzt, 136/136 Tests grün (gegen echtes
+  lokales Postgres verifiziert, siehe Abschnitt 18). **Aktuellste
+  bekannte vollständige Kopie — enthält Rollout-Schritte für Rafi
+  (siehe Abschnitt "Rollout-Anleitung für Rafi" oben).**
+
+## ✅ Git-Push aus der Sandbox: ENDGÜLTIG GEKLÄRT (07.09.2026, interaktiv) — geht nicht, wird nicht mehr versucht
+
+Nachdem der 403-Fehler ("not in this session's authorized repository
+set") über mehrere Nächte hinweg bestand, wurde heute (07.09.2026,
+interaktive Folge-Sitzung, Rafi anwesend) der Ursache auf den Grund
+gegangen:
+
+1. Rafi hat die Claude-GitHub-App über den offiziellen Weg (Claude.ai
+   Settings → Connectors → GitHub → Disconnect/Connect) installiert —
+   der direkte Installations-Link (`github.com/apps/.../installations/new`)
+   funktionierte NICHT (Fehler "state: Field required", weil der
+   OAuth-state-Parameter fehlt, den nur Claudes eigener Connect-Flow
+   mitliefert — bekannter Anthropic-Bug, siehe Issue #79353).
+2. Trotz erfolgreicher App-Installation: `git push` aus dieser (bereits
+   laufenden) Sitzung weiterhin 403 vom Git-Proxy — plausibel, weil die
+   Autorisierung einer Sitzung offenbar beim Sitzungsstart fixiert wird
+   und die App-Installation danach kam.
+3. Test aus einer NEUEN, frisch gestarteten Cowork-Sitzung: anderer
+   Fehler — `fatal: could not read Username for 'https://github.com'`.
+   Das bedeutet: in dieser Sitzung gab es GAR KEINE Credential-Injektion
+   (anders als der 403 vom Git-Proxy, der eine aktive, aber verweigerte
+   Injektion zeigt). Zwei verschiedene Fehlerbilder je nach Sitzungstyp
+   — in keinem Fall funktioniert es.
+4. Nachgefragt, ob ein Zugangs-Token stattdessen manuell/dauerhaft in
+   der Sandbox oder in Claudes persistentem Speicher hinterlegt werden
+   könnte: NEIN, aus zwei Gründen. (a) Die Sandbox selbst ist nicht
+   persistent (siehe "Kritischer Befund" oben) — ein dort abgelegtes
+   Token wäre beim nächsten Reset genauso weg wie der Code. (b) Es gibt
+   aktuell KEINE offizielle, sichere Secrets-Verwaltung für Scheduled
+   Tasks — der einzige dazu gefundene Feature-Request (Issue #51854,
+   "Encrypted secrets store for scheduled triggers") wurde von
+   Anthropic als "not planned" geschlossen. Die einzige dokumentierte
+   Alternative (Token im Klartext in den Prompt schreiben) ist ein
+   Sicherheitsrisiko und wurde bewusst nicht umgesetzt.
+
+**Endgültige Konsequenz**: `git push` aus dieser Sandbox heraus wird ab
+sofort NICHT MEHR versucht — weder von der nächtlichen Routine noch in
+interaktiven Sitzungen. Der Workflow ist stattdessen dauerhaft:
+Code entsteht/ändert sich hier → sofort als ZIP per SendUserFile an
+Rafi → Rafi pusht von seinem eigenen Rechner (mit seinen eigenen,
+lokal gespeicherten GitHub-Zugangsdaten) nach GitHub. Das ist kein
+Provisorium mehr, sondern der Standardweg, bis (falls je) Anthropic
+eine offizielle Secrets-Lösung für Scheduled Tasks anbietet.
+
+Frühere Einträge zu einzelnen 403-Versuchen (06./07.09.2026) sind mit
+diesem Abschnitt erledigt und werden nicht weiter fortgeschrieben.

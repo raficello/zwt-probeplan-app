@@ -6,7 +6,7 @@
 
 const path = require('path');
 const express = require('express');
-const { Pool } = require('pg');
+const { pool } = require('./db');
 const {
   SELECT_SAISONS_SQL,
   SELECT_SAISON_BY_JAHR_SQL,
@@ -55,17 +55,17 @@ const {
   SELECT_MUSIKER_SAISON_SQL,
   SELECT_KONZERT_SAISON_SQL,
   SELECT_WERK_SAISON_SQL,
+  SELECT_BENUTZER_SQL,
+  INSERT_BENUTZER_SQL,
+  UPDATE_BENUTZER_PASSWORT_SQL,
+  DELETE_BENUTZER_SQL,
 } = require('./queries');
 const { parseTerminInput, findKonflikte, raumTagErlaubt } = require('./validation');
 const { erzeugeGesamtplanPdf, erzeugeMusikerplanPdf, formatiereDatum } = require('./pdf');
-const { pruefeOrganisatorAuth } = require('./auth');
+const { pruefeOrganisatorAuth, hashePasswort } = require('./auth');
 
 const app = express();
 const port = process.env.PORT || 3000;
-
-const pool = process.env.DATABASE_URL
-  ? new Pool({ connectionString: process.env.DATABASE_URL })
-  : null;
 
 app.use(express.json());
 
@@ -352,6 +352,7 @@ app.get('/api/werke/vorschlaege', async (req, res) => {
         name: r.name,
         typ: r.typ,
         dauerMinuten: r.dauer_minuten,
+        quelle: r.quelle,
         teilnehmer: r.teilnehmer || [],
       })),
     });
@@ -820,6 +821,80 @@ app.delete('/api/werke/:id', pruefeOrganisatorAuth, async (req, res) => {
 // fehlendem Passwort, sonst 200 ohne Datenzugriff.
 app.get('/api/auth/pruefen', pruefeOrganisatorAuth, (req, res) => {
   res.json({ status: 'ok' });
+});
+
+// -- Benutzer:innen-Verwaltung (07.09.2026, Rafi-Feedback: "Es sollte
+// auch eine Username/Passwort Funktion geben für verschiedene User.",
+// siehe REFERENCE.md "Mehrere Benutzer:innen" und server/auth.js) --
+// bewusst OHNE Saison-Bezug, gilt saisonübergreifend. Auth-geschützt
+// wie alles Schreiben; wer bereits eingeloggt ist (per Notfallzugang
+// ODER einem bestehenden Konto), darf neue Konten anlegen/verwalten --
+// es gibt bewusst keine feinere Rollenunterscheidung (siehe
+// db/migration-benutzer.sql).
+app.get('/api/benutzer', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  try {
+    const result = await pool.query(SELECT_BENUTZER_SQL);
+    res.json({
+      benutzer: result.rows.map((b) => ({ id: b.id, benutzername: b.benutzername, erstelltAm: b.erstellt_am })),
+    });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+app.post('/api/benutzer', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const benutzername = typeof req.body.benutzername === 'string' ? req.body.benutzername.trim() : '';
+  const passwort = typeof req.body.passwort === 'string' ? req.body.passwort : '';
+  if (!benutzername) return res.status(400).json({ status: 'error', message: 'benutzername darf nicht leer sein' });
+  if (passwort.length < 6) return res.status(400).json({ status: 'error', message: 'Passwort muss mindestens 6 Zeichen haben' });
+
+  try {
+    const hash = await hashePasswort(passwort);
+    const result = await pool.query(INSERT_BENUTZER_SQL, [benutzername, hash]);
+    const b = result.rows[0];
+    res.status(201).json({ benutzer: { id: b.id, benutzername: b.benutzername, erstelltAm: b.erstellt_am } });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ status: 'error', message: `Benutzername "${benutzername}" existiert bereits` });
+    }
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// Passwort eines bestehenden Kontos ändern (z.B. eigenes Passwort oder
+// -- da keine Rollen -- das einer anderen Person -- ändert bewusst
+// NICHT den Benutzernamen, dafür Löschen + Neuanlegen verwenden).
+app.put('/api/benutzer/:id', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Ungültige Benutzer-ID' });
+  const passwort = typeof req.body.passwort === 'string' ? req.body.passwort : '';
+  if (passwort.length < 6) return res.status(400).json({ status: 'error', message: 'Passwort muss mindestens 6 Zeichen haben' });
+
+  try {
+    const hash = await hashePasswort(passwort);
+    const result = await pool.query(UPDATE_BENUTZER_PASSWORT_SQL, [hash, id]);
+    if (result.rows.length === 0) return res.status(404).json({ status: 'error', message: `Benutzer #${id} nicht gefunden` });
+    const b = result.rows[0];
+    res.json({ benutzer: { id: b.id, benutzername: b.benutzername, erstelltAm: b.erstellt_am } });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+app.delete('/api/benutzer/:id', pruefeOrganisatorAuth, async (req, res) => {
+  if (!pool) return res.status(503).json({ status: 'error', message: 'DATABASE_URL nicht gesetzt' });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Ungültige Benutzer-ID' });
+  try {
+    const result = await pool.query(DELETE_BENUTZER_SQL, [id]);
+    if (result.rows.length === 0) return res.status(404).json({ status: 'error', message: `Benutzer #${id} nicht gefunden` });
+    res.status(204).end();
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
 });
 
 app.post('/api/termine', pruefeOrganisatorAuth, async (req, res) => {
